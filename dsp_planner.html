@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dyson Sphere Program — Factory Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a1218;
+    --bg-grid:#123042;
+    --panel:#0f1e28;
+    --panel-2:#132734;
+    --line:#1c3a49;
+    --line-soft:#152c38;
+    --text:#e7f1f2;
+    --text-mute:#7d9aa4;
+    --text-dim:#4d6870;
+    --amber:#ffb454;
+    --amber-dim:#8a6633;
+    --teal:#4fd8c4;
+    --teal-dim:#245a52;
+    --red:#ff6b6b;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/48px 48px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/48px 48px,
+      var(--bg);
+    background-blend-mode: overlay, overlay, normal;
+    opacity: 1;
+    color:var(--text);
+    font-family:'Space Grotesk', sans-serif;
+    min-height:100vh;
+    padding:28px 20px 60px;
+  }
+  body::before{
+    content:"";
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    border-bottom:1px solid var(--line);
+    padding-bottom:16px;
+    margin-bottom:22px;
+  }
+  header .title-block{display:flex; align-items:baseline; gap:12px;}
+  h1{
+    font-size:1.5rem;
+    font-weight:700;
+    letter-spacing:0.02em;
+    margin:0;
+    color:var(--text);
+  }
+  h1 .accent{color:var(--amber);}
+  .subtitle{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.72rem;
+    color:var(--text-mute);
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+  }
+  .badge{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    color:var(--teal);
+    border:1px solid var(--teal-dim);
+    padding:3px 8px;
+    border-radius:var(--radius);
+    letter-spacing:0.03em;
+    white-space:nowrap;
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns: 300px 1fr;
+    gap:20px;
+    align-items:start;
+  }
+  @media (max-width: 860px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:16px;
+  }
+  .panel + .panel{margin-top:16px;}
+
+  .panel h2{
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--text-mute);
+    margin:0 0 12px 0;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .panel h2::before{
+    content:"";
+    width:8px;height:8px;
+    background:var(--amber);
+    display:inline-block;
+    transform:rotate(45deg);
+    flex-shrink:0;
+  }
+
+  label{
+    display:block;
+    font-size:0.68rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--text-mute);
+    margin-bottom:6px;
+    margin-top:14px;
+  }
+  label:first-of-type{margin-top:0;}
+
+  input[type="text"], input[type="number"], select{
+    width:100%;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.85rem;
+    padding:9px 10px;
+    border-radius:var(--radius);
+    outline:none;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus{
+    border-color:var(--amber);
+  }
+  select{cursor:pointer;}
+
+  .autocomplete-wrap{position:relative;}
+  .ac-list{
+    position:absolute;
+    top:calc(100% + 2px);
+    left:0; right:0;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    max-height:260px;
+    overflow-y:auto;
+    z-index:20;
+    display:none;
+  }
+  .ac-list.open{display:block;}
+  .ac-item{
+    padding:8px 10px;
+    font-size:0.82rem;
+    cursor:pointer;
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .ac-item:hover, .ac-item.active{background:var(--line-soft); color:var(--amber);}
+  .ac-item .made-in{font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--text-dim);}
+
+  button.primary{
+    width:100%;
+    margin-top:16px;
+    background:var(--amber);
+    color:#1a1000;
+    border:none;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:0.9rem;
+    letter-spacing:0.03em;
+    padding:11px 14px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    text-transform:uppercase;
+  }
+  button.primary:hover{background:#ffc372;}
+  button.primary:disabled{background:var(--amber-dim); color:#00000066; cursor:not-allowed;}
+
+  .hint{
+    font-size:0.72rem;
+    color:var(--text-dim);
+    margin-top:10px;
+    line-height:1.5;
+  }
+
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+  /* results */
+  #empty-state{
+    padding:60px 20px;
+    text-align:center;
+    color:var(--text-dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.85rem;
+  }
+  #empty-state .glyph{font-size:2rem; margin-bottom:14px; color:var(--line);}
+
+  .summary-strip{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(140px,1fr));
+    gap:10px;
+    margin-bottom:18px;
+  }
+  .stat{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:12px 14px;
+  }
+  .stat .num{
+    font-family:'JetBrains Mono', monospace;
+    font-size:1.4rem;
+    font-weight:600;
+    color:var(--amber);
+    line-height:1.1;
+  }
+  .stat .lbl{
+    font-size:0.66rem;
+    color:var(--text-mute);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin-top:4px;
+  }
+
+  .chain{
+    position:relative;
+  }
+  .node{
+    position:relative;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-left:3px solid var(--teal-dim);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-bottom:2px;
+  }
+  .node.is-target{border-left-color:var(--amber);}
+  .node.is-raw{border-left-color:var(--text-dim); opacity:0.9;}
+
+  .belt{
+    height:22px;
+    margin-left:24px;
+    border-left:2px dashed var(--line);
+    position:relative;
+  }
+  .belt::after{
+    content:"▾";
+    position:absolute;
+    left:-8px; top:2px;
+    color:var(--text-dim);
+    font-size:0.7rem;
+  }
+
+  .node-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .node-name{
+    font-size:1.02rem;
+    font-weight:600;
+  }
+  .node-tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.64rem;
+    color:var(--text-dim);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin-top:2px;
+  }
+  .node-rate{
+    text-align:right;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .node-rate .rate-num{font-size:1.05rem; color:var(--teal); font-weight:600;}
+  .node-rate .rate-lbl{font-size:0.62rem; color:var(--text-dim); text-transform:uppercase;}
+
+  .node-controls{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(150px,1fr));
+    gap:8px;
+    margin-top:12px;
+  }
+  .ctrl-field label{margin:0 0 4px 0;}
+  .ctrl-field select, .ctrl-field input{padding:7px 8px; font-size:0.76rem;}
+
+  .building-count{
+    margin-top:12px;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    padding-top:10px;
+    border-top:1px solid var(--line-soft);
+  }
+  .building-count .count{
+    font-family:'JetBrains Mono', monospace;
+    font-size:1.3rem;
+    font-weight:700;
+    color:var(--amber);
+  }
+  .building-count .exact{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.7rem;
+    color:var(--text-dim);
+  }
+  .building-count .blabel{
+    font-size:0.72rem;
+    color:var(--text-mute);
+  }
+
+  .ing-list{
+    margin-top:10px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.72rem;
+    color:var(--text-mute);
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px 14px;
+  }
+  .ing-list span.ing-name{color:var(--text);}
+
+  footer{
+    margin-top:30px;
+    text-align:center;
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    color:var(--text-dim);
+  }
+  footer a{color:var(--text-mute);}
+
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title-block">
+      <h1><span class="accent">DSP</span> Factory Planner</h1>
+      <span class="subtitle">assembler &amp; recipe calculator</span>
+    </div>
+    <span class="badge" id="recipe-count-badge">127 RECIPES LOADED</span>
+  </header>
+
+  <div class="layout">
+    <!-- LEFT: controls -->
+    <div>
+      <div class="panel">
+        <h2>Target</h2>
+
+        <label for="item-search">Item to produce</label>
+        <div class="autocomplete-wrap">
+          <input type="text" id="item-search" placeholder="Search e.g. Electromagnetic Turbine" autocomplete="off">
+          <div class="ac-list" id="ac-list"></div>
+        </div>
+
+        <label for="rate-input">Target rate</label>
+        <div class="row2">
+          <input type="number" id="rate-input" value="60" min="0" step="any">
+          <select id="rate-unit">
+            <option value="min" selected>per minute</option>
+            <option value="sec">per second</option>
+          </select>
+        </div>
+
+        <button class="primary" id="calc-btn" disabled>Calculate chain</button>
+        <div class="hint">Pick an item, set the rate you want flowing out, and this builds the full chain down to raw ore/oil/water, with an assembler count at every step.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Defaults</h2>
+        <label for="default-assembler">Assembler tier</label>
+        <select id="default-assembler">
+          <option value="0.75">Mk.I (0.75×)</option>
+          <option value="1" selected>Mk.II (1×)</option>
+          <option value="1.5">Mk.III (1.5×)</option>
+        </select>
+
+        <label for="default-smelter">Smelter tier</label>
+        <select id="default-smelter">
+          <option value="1" selected>Arc Smelter (1×)</option>
+          <option value="2">Plane Smelter (2×)</option>
+        </select>
+
+        <label for="default-chem">Chemical Plant tier</label>
+        <select id="default-chem">
+          <option value="1" selected>Standard (1×)</option>
+          <option value="2">Quantum (2×)</option>
+        </select>
+
+        <label for="default-prolif">Proliferator (applied everywhere)</label>
+        <select id="default-prolif">
+          <option value="none" selected>None</option>
+          <option value="mk1">Mk.I</option>
+          <option value="mk2">Mk.II</option>
+          <option value="mk3">Mk.III</option>
+        </select>
+
+        <label for="default-prolif-mode">Proliferator mode</label>
+        <select id="default-prolif-mode">
+          <option value="speed" selected>Extra speed</option>
+          <option value="product">Extra product</option>
+        </select>
+
+        <div class="hint">These set the starting point for every step below — each step can still be overridden individually once the chain is built.</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: results -->
+    <div class="panel" id="results-panel">
+      <div id="empty-state">
+        <div class="glyph">◈</div>
+        Search for an item on the left to lay out its production chain.
+      </div>
+      <div id="results-content" style="display:none;">
+        <div class="summary-strip" id="summary-strip"></div>
+        <div class="chain" id="chain"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Recipe data sourced from the game's own assets via a community extractor (center-brain-archive). Building tiers, mining rates and proliferator bonuses are editable — verify against your own tech level.
+  </footer>
+</div>
+
+<script id="recipe-data" type="application/json">
+{"IronSmelting":{"i":[["IronOre",1.0]],"r":[["IronIngot",1.0]],"t":1.0,"b":"Smelter"},"CopperSmelting":{"i":[["CopperOre",1.0]],"r":[["CopperIngot",1.0]],"t":1.0,"b":"Smelter"},"SiliconSmelting":{"i":[["SiliconOre",2.0]],"r":[["HighPuritySilicon",1.0]],"t":2.0,"b":"Smelter"},"StoneSmelting":{"i":[["StoneOre",1.0]],"r":[["Stone",1.0]],"t":1.0,"b":"Smelter"},"GraphiteSmelting":{"i":[["CoalOre",2.0]],"r":[["EnergeticGraphite",1.0]],"t":2.0,"b":"Smelter"},"TitaniumSmelting":{"i":[["TitaniumOre",2.0]],"r":[["TitaniumIngot",1.0]],"t":2.0,"b":"Smelter"},"PlasmaRefining":{"i":[["CrudeOil",2.0]],"r":[["Hydrogen",1.0],["RefinedOil",2.0]],"t":4.0,"b":"OilRefinery"},"Plastic":{"i":[["RefinedOil",2.0],["EnergeticGraphite",1.0]],"r":[["Plastic",1.0]],"t":3.0,"b":"ChemicalPlant"},"GrapheneFromFireIce":{"i":[["FireIce",2.0]],"r":[["Graphene",2.0],["Hydrogen",1.0]],"t":2.0,"b":"ChemicalPlant"},"GrapheneFromGraphiteAndSulfuric":{"i":[["EnergeticGraphite",3.0],["SulfuricAcid",1.0]],"r":[["Graphene",2.0]],"t":3.0,"b":"ChemicalPlant"},"MagnetSmelting":{"i":[["IronOre",1.0]],"r":[["Magnet",1.0]],"t":1.5,"b":"Smelter"},"Electromagnet":{"i":[["Magnet",2.0],["CopperIngot",1.0]],"r":[["Electromagnet",2.0]],"t":1.0,"b":"AssemblingMachine"},"CrystalSiliconFromIngot":{"i":[["HighPuritySilicon",1.0]],"r":[["CrystalSilicon",1.0]],"t":2.0,"b":"Smelter"},"CrystalSiliconFromFractal":{"i":[["FractalSilicon",1.0]],"r":[["CrystalSilicon",1.0]],"t":4.0,"b":"AssemblingMachine"},"GlassSmelting":{"i":[["StoneOre",2.0]],"r":[["Glass",1.0]],"t":2.0,"b":"Smelter"},"DiamondFromGraphite":{"i":[["EnergeticGraphite",1.0]],"r":[["Diamond",1.0]],"t":2.0,"b":"Smelter"},"DiamondFromKimberlite":{"i":[["Kimberlite",1.0]],"r":[["Diamond",1.0]],"t":2.0,"b":"Smelter"},"XRayCracking":{"i":[["RefinedOil",1.0],["Hydrogen",2.0]],"r":[["Hydrogen",3.0],["EnergeticGraphite",1.0]],"t":4.0,"b":"OilRefinery"},"OrganicCrystalFromWood":{"i":[["Log",20.0],["PlantFuel",30.0],["Water",10.0]],"r":[["OrganicCrystal",1.0]],"t":6.0,"b":"AssemblingMachine"},"OrganicCrystalFromPlastic":{"i":[["Plastic",2.0],["RefinedOil",1.0],["Water",1.0]],"r":[["OrganicCrystal",1.0]],"t":6.0,"b":"ChemicalPlant"},"HydrogenFuelRod":{"i":[["TitaniumIngot",1.0],["Hydrogen",5.0]],"r":[["HydrogenFuelRod",1.0]],"t":3.0,"b":"AssemblingMachine"},"SteelSmelting":{"i":[["IronIngot",3.0]],"r":[["Steel",1.0]],"t":3.0,"b":"Smelter"},"SiliconOreFromStone":{"i":[["StoneOre",10.0]],"r":[["SiliconOre",1.0]],"t":10.0,"b":"Smelter"},"CircuitBoard":{"i":[["IronIngot",2.0],["CopperIngot",1.0]],"r":[["CircuitBoard",2.0]],"t":1.0,"b":"AssemblingMachine"},"SulfuricAcidFromStone":{"i":[["RefinedOil",6.0],["StoneOre",8.0],["Water",4.0]],"r":[["SulfuricAcid",4.0]],"t":6.0,"b":"ChemicalPlant"},"PlasmaExciter":{"i":[["Electromagnet",4.0],["Prism",2.0]],"r":[["PlasmaExciter",1.0]],"t":2.0,"b":"AssemblingMachine"},"Processor":{"i":[["CircuitBoard",2.0],["MicrocrystallineComponent",2.0]],"r":[["Processor",1.0]],"t":3.0,"b":"AssemblingMachine"},"PhotonCombinerFromPrism":{"i":[["Prism",2.0],["CircuitBoard",1.0]],"r":[["PhotonCombiner",1.0]],"t":3.0,"b":"AssemblingMachine"},"PhotonCombinerFromCrystal":{"i":[["OpticalGratingCrystal",1.0],["CircuitBoard",1.0]],"r":[["PhotonCombiner",1.0]],"t":3.0,"b":"AssemblingMachine"},"MicrocrystallineComponent":{"i":[["HighPuritySilicon",2.0],["CopperIngot",1.0]],"r":[["MicrocrystallineComponent",1.0]],"t":2.0,"b":"AssemblingMachine"},"ElectromagneticMatrix":{"i":[["Electromagnet",1.0],["CircuitBoard",1.0]],"r":[["ElectromagneticMatrix",1.0]],"t":3.0,"b":"MatrixLab"},"EnergyMatrix":{"i":[["EnergeticGraphite",2.0],["Hydrogen",2.0]],"r":[["EnergyMatrix",1.0]],"t":6.0,"b":"MatrixLab"},"StructureMatrix":{"i":[["Diamond",1.0],["TitaniumCrystal",1.0]],"r":[["StructureMatrix",1.0]],"t":8.0,"b":"MatrixLab"},"InformationMatrix":{"i":[["Processor",2.0],["ParticleBroadband",1.0]],"r":[["InformationMatrix",1.0]],"t":10.0,"b":"MatrixLab"},"GravityMatrix":{"i":[["GravitonLens",1.0],["QuantumChip",1.0]],"r":[["GravityMatrix",2.0]],"t":24.0,"b":"MatrixLab"},"UniverseMatrix":{"i":[["ElectromagneticMatrix",1.0],["EnergyMatrix",1.0],["StructureMatrix",1.0],["InformationMatrix",1.0],["GravityMatrix",1.0],["Antimatter",1.0]],"r":[["UniverseMatrix",1.0]],"t":15.0,"b":"MatrixLab"},"Foundation":{"i":[["Stone",3.0],["Steel",1.0]],"r":[["Foundation",1.0]],"t":1.0,"b":"AssemblingMachine"},"Gear":{"i":[["IronIngot",1.0]],"r":[["Gear",1.0]],"t":1.0,"b":"AssemblingMachine"},"QuantumChip":{"i":[["Processor",2.0],["PlaneFilter",2.0]],"r":[["QuantumChip",1.0]],"t":6.0,"b":"AssemblingMachine"},"DiracInversion":{"i":[["CriticalPhoton",2.0]],"r":[["Antimatter",2.0],["Hydrogen",2.0]],"t":2.0,"b":"MiniatureParticleCollider"},"Prism":{"i":[["Glass",3.0]],"r":[["Prism",2.0]],"t":2.0,"b":"AssemblingMachine"},"Thruster":{"i":[["Steel",2.0],["CopperIngot",3.0]],"r":[["Thruster",1.0]],"t":4.0,"b":"AssemblingMachine"},"ReinforcedThruster":{"i":[["TitaniumAlloy",5.0],["ElectromagneticTurbine",5.0]],"r":[["ReinforcedThruster",1.0]],"t":6.0,"b":"AssemblingMachine"},"CasimirCrystalFromTitanium":{"i":[["TitaniumCrystal",1.0],["Graphene",2.0],["Hydrogen",12.0]],"r":[["CasimirCrystal",1.0]],"t":4.0,"b":"AssemblingMachine"},"CasimirCrystalFromOpticalGratingCrystal":{"i":[["OpticalGratingCrystal",6.0],["Graphene",2.0],["Hydrogen",12.0]],"r":[["CasimirCrystal",1.0]],"t":4.0,"b":"AssemblingMachine"},"TitaniumGlass":{"i":[["Glass",2.0],["TitaniumIngot",2.0],["Water",2.0]],"r":[["TitaniumGlass",2.0]],"t":5.0,"b":"AssemblingMachine"},"TitaniumAlloy":{"i":[["TitaniumIngot",4.0],["Steel",4.0],["SulfuricAcid",8.0]],"r":[["TitaniumAlloy",4.0]],"t":12.0,"b":"Smelter"},"TitaniumCrystal":{"i":[["OrganicCrystal",1.0],["TitaniumIngot",3.0]],"r":[["TitaniumCrystal",1.0]],"t":4.0,"b":"AssemblingMachine"},"CarbonNanotubeFromGraphene":{"i":[["Graphene",3.0],["TitaniumIngot",1.0]],"r":[["CarbonNanotube",2.0]],"t":4.0,"b":"ChemicalPlant"},"CarbonNanotubeFromSpiniform":{"i":[["SpiniformStalagmiteCrystal",2.0]],"r":[["CarbonNanotube",2.0]],"t":4.0,"b":"ChemicalPlant"},"ParticleBroadband":{"i":[["CarbonNanotube",2.0],["CrystalSilicon",2.0],["Plastic",1.0]],"r":[["ParticleBroadband",1.0]],"t":8.0,"b":"AssemblingMachine"},"PlaneFilter":{"i":[["CasimirCrystal",1.0],["TitaniumGlass",2.0]],"r":[["PlaneFilter",1.0]],"t":12.0,"b":"AssemblingMachine"},"DeuteriumInParticleCollider":{"i":[["Hydrogen",10.0]],"r":[["Deuterium",5.0]],"t":5.0,"b":"MiniatureParticleCollider"},"DeuteriumFractionation":{"i":[["Hydrogen",1.0]],"r":[["Deuterium",0.01],["Hydrogen",0.99]],"t":1.0,"b":"Fractionator"},"DeuteronFuelRod":{"i":[["TitaniumAlloy",1.0],["Deuterium",10.0],["SuperMagneticRing",1.0]],"r":[["DeuteronFuelRod",1.0]],"t":6.0,"b":"AssemblingMachine"},"AnnihilationConstraintSphere":{"i":[["ParticleContainer",1.0],["Processor",1.0]],"r":[["AnnihilationConstraintSphere",1.0]],"t":20.0,"b":"AssemblingMachine"},"AntimatterFuelRod":{"i":[["Antimatter",10.0],["Hydrogen",10.0],["AnnihilationConstraintSphere",1.0],["TitaniumAlloy",1.0]],"r":[["AntimatterFuelRod",1.0]],"t":12.0,"b":"AssemblingMachine"},"SpaceWarperFromLens":{"i":[["GravitonLens",1.0]],"r":[["SpaceWarper",1.0]],"t":10.0,"b":"AssemblingMachine"},"SpaceWarperFromMatrix":{"i":[["GravityMatrix",1.0]],"r":[["SpaceWarper",8.0]],"t":10.0,"b":"AssemblingMachine"},"FrameMaterial":{"i":[["CarbonNanotube",4.0],["TitaniumAlloy",1.0],["HighPuritySilicon",1.0]],"r":[["FrameMaterial",1.0]],"t":6.0,"b":"AssemblingMachine"},"DysonSphereComponent":{"i":[["FrameMaterial",3.0],["SolarPanel",3.0],["Processor",3.0]],"r":[["DysonSphereComponent",1.0]],"t":8.0,"b":"AssemblingMachine"},"SmallCarrierRocket":{"i":[["DysonSphereComponent",2.0],["DeuteronFuelRod",2.0],["QuantumChip",2.0]],"r":[["SmallCarrierRocket",1.0]],"t":6.0,"b":"AssemblingMachine"},"LogisticsDrone":{"i":[["IronIngot",5.0],["Processor",2.0],["Thruster",2.0]],"r":[["LogisticsDrone",1.0]],"t":4.0,"b":"AssemblingMachine"},"LogisticsVessel":{"i":[["TitaniumAlloy",10.0],["Processor",10.0],["ReinforcedThruster",2.0]],"r":[["LogisticsVessel",1.0]],"t":6.0,"b":"AssemblingMachine"},"Motor":{"i":[["IronIngot",2.0],["Gear",1.0],["Electromagnet",1.0]],"r":[["Motor",1.0]],"t":2.0,"b":"AssemblingMachine"},"ElectromagneticTurbine":{"i":[["Motor",2.0],["Electromagnet",2.0]],"r":[["ElectromagneticTurbine",1.0]],"t":2.0,"b":"AssemblingMachine"},"ParticleContainerFromEMTurbine":{"i":[["ElectromagneticTurbine",2.0],["CopperIngot",2.0],["Graphene",2.0]],"r":[["ParticleContainer",1.0]],"t":4.0,"b":"AssemblingMachine"},"ParticleContainerFromUnipolar":{"i":[["UnipolarMagnet",10.0],["CopperIngot",2.0]],"r":[["ParticleContainer",1.0]],"t":4.0,"b":"AssemblingMachine"},"SuperMagneticRing":{"i":[["ElectromagneticTurbine",2.0],["Magnet",3.0],["EnergeticGraphite",1.0]],"r":[["SuperMagneticRing",1.0]],"t":3.0,"b":"AssemblingMachine"},"StrangeMatter":{"i":[["ParticleContainer",2.0],["IronIngot",2.0],["Deuterium",10.0]],"r":[["StrangeMatter",1.0]],"t":8.0,"b":"MiniatureParticleCollider"},"GravitonLens":{"i":[["Diamond",4.0],["StrangeMatter",1.0]],"r":[["GravitonLens",1.0]],"t":6.0,"b":"AssemblingMachine"},"TeslaTower":{"i":[["IronIngot",2.0],["Electromagnet",1.0]],"r":[["TeslaTower",1.0]],"t":1.0,"b":"AssemblingMachine"},"WirelessPowerTower":{"i":[["TeslaTower",1.0],["PlasmaExciter",3.0]],"r":[["WirelessPowerTower",1.0]],"t":3.0,"b":"AssemblingMachine"},"SatelliteSubstation":{"i":[["WirelessPowerTower",1.0],["SuperMagneticRing",10.0],["FrameMaterial",2.0]],"r":[["SatelliteSubstation",1.0]],"t":5.0,"b":"AssemblingMachine"},"WindTurbine":{"i":[["IronIngot",6.0],["Gear",1.0],["Electromagnet",3.0]],"r":[["WindTurbine",1.0]],"t":4.0,"b":"AssemblingMachine"},"ThermalPowerStation":{"i":[["IronIngot",10.0],["Stone",4.0],["Gear",4.0],["Electromagnet",4.0]],"r":[["ThermalPowerStation",1.0]],"t":5.0,"b":"AssemblingMachine"},"SolarPanel":{"i":[["CopperIngot",6.0],["HighPuritySilicon",6.0],["CircuitBoard",4.0]],"r":[["SolarPanel",1.0]],"t":5.0,"b":"AssemblingMachine"},"ConveyorMK1":{"i":[["IronIngot",2.0],["Gear",1.0]],"r":[["ConveyorMK1",3.0]],"t":1.0,"b":"AssemblingMachine"},"ConveyorMK2":{"i":[["ConveyorMK1",3.0],["ElectromagneticTurbine",1.0]],"r":[["ConveyorMK2",3.0]],"t":1.0,"b":"AssemblingMachine"},"ConveyorMK3":{"i":[["ConveyorMK2",3.0],["SuperMagneticRing",1.0],["Graphene",1.0]],"r":[["ConveyorMK3",3.0]],"t":1.0,"b":"AssemblingMachine"},"Splitter":{"i":[["IronIngot",3.0],["Gear",2.0],["CircuitBoard",1.0]],"r":[["Splitter",1.0]],"t":2.0,"b":"AssemblingMachine"},"StorageMK1":{"i":[["IronIngot",4.0],["Stone",4.0]],"r":[["StorageMK1",1.0]],"t":2.0,"b":"AssemblingMachine"},"StorageMK2":{"i":[["Steel",8.0],["Stone",8.0]],"r":[["StorageMK2",1.0]],"t":4.0,"b":"AssemblingMachine"},"SorterMK1":{"i":[["IronIngot",1.0],["CircuitBoard",1.0]],"r":[["SorterMK1",1.0]],"t":1.0,"b":"AssemblingMachine"},"SorterMK2":{"i":[["SorterMK1",2.0],["Motor",1.0]],"r":[["SorterMK2",2.0]],"t":1.0,"b":"AssemblingMachine"},"SorterMK3":{"i":[["SorterMK2",2.0],["ElectromagneticTurbine",1.0]],"r":[["SorterMK3",2.0]],"t":1.0,"b":"AssemblingMachine"},"MiningMachine":{"i":[["IronIngot",4.0],["CircuitBoard",2.0],["Electromagnet",2.0],["Gear",2.0]],"r":[["MiningMachine",1.0]],"t":3.0,"b":"AssemblingMachine"},"WaterPump":{"i":[["IronIngot",8.0],["Stone",4.0],["Motor",4.0],["CircuitBoard",2.0]],"r":[["WaterPump",1.0]],"t":4.0,"b":"AssemblingMachine"},"OilExtractor":{"i":[["Steel",12.0],["Stone",12.0],["CircuitBoard",6.0],["PlasmaExciter",4.0]],"r":[["OilExtractor",1.0]],"t":8.0,"b":"AssemblingMachine"},"OilRefinery":{"i":[["Steel",10.0],["Stone",10.0],["CircuitBoard",6.0],["PlasmaExciter",6.0]],"r":[["OilRefinery",1.0]],"t":6.0,"b":"AssemblingMachine"},"AssemblingMachineMK1":{"i":[["IronIngot",4.0],["Gear",8.0],["CircuitBoard",4.0]],"r":[["AssemblingMachineMK1",1.0]],"t":2.0,"b":"AssemblingMachine"},"AssemblingMachineMK2":{"i":[["AssemblingMachineMK1",1.0],["Graphene",8.0],["Processor",4.0]],"r":[["AssemblingMachineMK2",1.0]],"t":3.0,"b":"AssemblingMachine"},"AssemblingMachineMK3":{"i":[["AssemblingMachineMK2",1.0],["ParticleBroadband",8.0],["QuantumChip",2.0]],"r":[["AssemblingMachineMK3",1.0]],"t":4.0,"b":"AssemblingMachine"},"Smelter":{"i":[["IronIngot",4.0],["Stone",2.0],["CircuitBoard",4.0],["Electromagnet",2.0]],"r":[["Smelter",1.0]],"t":3.0,"b":"AssemblingMachine"},"Fractionator":{"i":[["Steel",8.0],["Stone",4.0],["Glass",4.0],["Processor",1.0]],"r":[["Fractionator",1.0]],"t":3.0,"b":"AssemblingMachine"},"ChemicalPlant":{"i":[["Steel",8.0],["Stone",8.0],["Glass",8.0],["CircuitBoard",2.0]],"r":[["ChemicalPlant",1.0]],"t":5.0,"b":"AssemblingMachine"},"MatrixLab":{"i":[["IronIngot",8.0],["Glass",4.0],["CircuitBoard",4.0],["Electromagnet",4.0]],"r":[["MatrixLab",1.0]],"t":3.0,"b":"AssemblingMachine"},"RayReceiver":{"i":[["Steel",20.0],["HighPuritySilicon",20.0],["PhotonCombiner",10.0],["Processor",5.0],["SuperMagneticRing",20.0]],"r":[["RayReceiver",1.0]],"t":8.0,"b":"AssemblingMachine"},"EMRailEjector":{"i":[["Steel",20.0],["Gear",20.0],["Processor",5.0],["SuperMagneticRing",10.0]],"r":[["EMRailEjector",1.0]],"t":6.0,"b":"AssemblingMachine"},"MiniatureParticleCollider":{"i":[["TitaniumAlloy",20.0],["FrameMaterial",20.0],["SuperMagneticRing",50.0],["Graphene",10.0],["Processor",8.0]],"r":[["MiniatureParticleCollider",1.0]],"t":15.0,"b":"AssemblingMachine"},"ArtificialStar":{"i":[["TitaniumAlloy",20.0],["FrameMaterial",20.0],["AnnihilationConstraintSphere",10.0],["QuantumChip",10.0]],"r":[["ArtificialStar",1.0]],"t":30.0,"b":"AssemblingMachine"},"Accumulator":{"i":[["IronIngot",6.0],["SuperMagneticRing",6.0],["CrystalSilicon",4.0]],"r":[["Accumulator",1.0]],"t":5.0,"b":"AssemblingMachine"},"EnergyExchanger":{"i":[["TitaniumAlloy",40.0],["Steel",40.0],["Processor",40.0],["ParticleContainer",8.0]],"r":[["EnergyExchanger",1.0]],"t":15.0,"b":"AssemblingMachine"},"VerticalLaunchingSilo":{"i":[["TitaniumAlloy",80.0],["FrameMaterial",30.0],["GravitonLens",20.0],["QuantumChip",10.0]],"r":[["VerticalLaunchingSilo",1.0]],"t":30.0,"b":"AssemblingMachine"},"PlanetaryLogisticsStation":{"i":[["Steel",40.0],["TitaniumIngot",40.0],["Processor",40.0],["ParticleContainer",20.0]],"r":[["PlanetaryLogisticsStation",1.0]],"t":20.0,"b":"AssemblingMachine"},"InterstellarLogisticsStation":{"i":[["PlanetaryLogisticsStation",1.0],["TitaniumAlloy",40.0],["ParticleContainer",20.0]],"r":[["InterstellarLogisticsStation",1.0]],"t":30.0,"b":"AssemblingMachine"},"StorageTank":{"i":[["IronIngot",8.0],["Stone",4.0],["Glass",4.0]],"r":[["StorageTank",1.0]],"t":2.0,"b":"AssemblingMachine"},"OrbitCollector":{"i":[["InterstellarLogisticsStation",1.0],["SuperMagneticRing",50.0],["ReinforcedThruster",20.0],["FullAccumulator",20.0]],"r":[["OrbitCollector",1.0]],"t":30.0,"b":"AssemblingMachine"},"IronMining":{"i":[],"r":[["IronOre",1.0]],"t":2.0,"b":"MiningMachine"},"CopperMining":{"i":[],"r":[["CopperOre",1.0]],"t":2.0,"b":"MiningMachine"},"CoalMining":{"i":[],"r":[["CoalOre",1.0]],"t":2.0,"b":"MiningMachine"},"StoneMining":{"i":[],"r":[["StoneOre",1.0]],"t":2.0,"b":"MiningMachine"},"SiliconMining":{"i":[],"r":[["SiliconOre",1.0]],"t":2.0,"b":"MiningMachine"},"TitaniumMining":{"i":[],"r":[["TitaniumOre",1.0]],"t":2.0,"b":"MiningMachine"},"FireIceMining":{"i":[],"r":[["FireIce",1.0]],"t":2.0,"b":"MiningMachine"},"DiamondMining":{"i":[],"r":[["Kimberlite",1.0]],"t":2.0,"b":"MiningMachine"},"FractalSiliconMining":{"i":[],"r":[["FractalSilicon",1.0]],"t":2.0,"b":"MiningMachine"},"OpticalGratingCrystalMining":{"i":[],"r":[["OpticalGratingCrystal",1.0]],"t":2.0,"b":"MiningMachine"},"OrganicCrystalMining":{"i":[],"r":[["OrganicCrystal",1.0]],"t":2.0,"b":"MiningMachine"},"SpiniformStalagmiteCrystalMining":{"i":[],"r":[["SpiniformStalagmiteCrystal",1.0]],"t":2.0,"b":"MiningMachine"},"UnipolarMagnetMining":{"i":[],"r":[["UnipolarMagnet",1.0]],"t":2.0,"b":"MiningMachine"},"OilExtraction":{"i":[],"r":[["CrudeOil",1.0]],"t":1.0,"b":"OilExtractor"},"CriticalPhotonReceiving":{"i":[],"r":[["CriticalPhoton",1.0]],"t":1.0,"b":"RayReceiver"},"WaterPumping":{"i":[],"r":[["Water",1.0]],"t":1.2,"b":"WaterPump"},"SulfuricAcidPumping":{"i":[],"r":[["SulfuricAcid",1.0]],"t":1.2,"b":"WaterPump"},"GasGiantCollection":{"i":[],"r":[["Hydrogen",4.0],["Deuterium",0.0]],"t":8.0,"b":"OrbitCollector"},"IceGiantCollection":{"i":[],"r":[["FireIce",2.0],["Hydrogen",1.0]],"t":8.0,"b":"OrbitCollector"}}
+</script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- data ----------
+  const RECIPES = JSON.parse(document.getElementById('recipe-data').textContent);
+
+  const DISPLAY_OVERRIDES = {
+    'AssemblingMachineMK1':'Assembling Machine Mk.I',
+    'AssemblingMachineMK2':'Assembling Machine Mk.II',
+    'AssemblingMachineMK3':'Assembling Machine Mk.III',
+    'ConveyorMK1':'Conveyor Belt Mk.I',
+    'ConveyorMK2':'Conveyor Belt Mk.II',
+    'ConveyorMK3':'Conveyor Belt Mk.III',
+    'SorterMK1':'Sorter Mk.I',
+    'SorterMK2':'Sorter Mk.II',
+    'SorterMK3':'Sorter Mk.III',
+    'StorageMK1':'Storage Mk.I',
+    'StorageMK2':'Storage Mk.II',
+    'EMRailEjector':'EM-Rail Ejector',
+    'XRayCracking':'X-Ray Cracking',
+    'ParticleContainerFromEMTurbine':'Particle Container (from EM Turbine)',
+    'Electromagnet':'Magnetic Coil',
+    'Motor':'Electric Motor',
+    'HighPuritySilicon':'High-Purity Silicon',
+    'Kimberlite':'Kimberlite Ore',
+  };
+  const BUILDING_DISPLAY = {
+    AssemblingMachine:'Assembler',
+    Smelter:'Smelter',
+    ChemicalPlant:'Chemical Plant',
+    OilRefinery:'Oil Refinery',
+    OilExtractor:'Oil Extractor',
+    MiningMachine:'Mining Machine',
+    WaterPump:'Water Pump',
+    Fractionator:'Fractionator',
+    MatrixLab:'Matrix Lab',
+    MiniatureParticleCollider:'Particle Collider',
+    OrbitCollector:'Orbital Collector',
+    RayReceiver:'Ray Receiver',
+  };
+
+  function prettify(name){
+    if (DISPLAY_OVERRIDES[name]) return DISPLAY_OVERRIDES[name];
+    let s = name.replace(/MK(\d)/g, ' Mk.$1');
+    s = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    s = s.replace(/([A-Z])([A-Z][a-z])/g, '$1 $2');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  function displayItem(name){ return prettify(name); }
+  function displayBuilding(b){ return BUILDING_DISPLAY[b] || prettify(b); }
+
+  // ---------- indices ----------
+  const itemRecipes = {}; // item -> [recipeKey,...] (in JSON order = preferred default first)
+  const allItems = new Set();
+  for (const [key, rec] of Object.entries(RECIPES)){
+    for (const [item] of rec.r){
+      if (!itemRecipes[item]) itemRecipes[item] = [];
+      itemRecipes[item].push(key);
+      allItems.add(item);
+    }
+    for (const [item] of rec.i) allItems.add(item);
+  }
+  const sortedItemNames = Array.from(allItems).sort((a,b) => displayItem(a).localeCompare(displayItem(b)));
+
+  // ---------- building tiers ----------
+  const BUILDING_TIERS = {
+    AssemblingMachine: [ {name:'Mk.I', mult:0.75}, {name:'Mk.II', mult:1}, {name:'Mk.III', mult:1.5} ],
+    Smelter: [ {name:'Arc Smelter', mult:1}, {name:'Plane Smelter', mult:2} ],
+    ChemicalPlant: [ {name:'Standard', mult:1}, {name:'Quantum', mult:2} ],
+    OilRefinery: [ {name:'Standard', mult:1} ],
+    OilExtractor: [ {name:'Standard', mult:1} ],
+    MiningMachine: [ {name:'Standard', mult:1} ],
+    WaterPump: [ {name:'Standard', mult:1} ],
+    Fractionator: [ {name:'Standard', mult:1} ],
+    MatrixLab: [ {name:'Standard', mult:1} ],
+    MiniatureParticleCollider: [ {name:'Standard', mult:1} ],
+    OrbitCollector: [ {name:'Standard', mult:1} ],
+    RayReceiver: [ {name:'Standard', mult:1} ],
+  };
+
+  const PROLIF = {
+    none: {speed:0, product:0},
+    mk1: {speed:0.25, product:0.125},
+    mk2: {speed:0.50, product:0.20},
+    mk3: {speed:1.00, product:0.25},
+  };
+
+  // ---------- state ----------
+  const state = {
+    targetItem: null,
+    targetRate: 60, // per minute, normalized
+    selectedRecipe: {},   // item -> recipeKey override
+    nodeSettings: {},     // recipeKey -> {tierIdx, prolifTier, prolifMode}
+  };
+
+  function getDefaults(){
+    return {
+      AssemblingMachine: parseFloat(document.getElementById('default-assembler').value),
+      Smelter: parseFloat(document.getElementById('default-smelter').value),
+      ChemicalPlant: parseFloat(document.getElementById('default-chem').value),
+      prolifTier: document.getElementById('default-prolif').value,
+      prolifMode: document.getElementById('default-prolif-mode').value,
+    };
+  }
+
+  function tierListFor(building){
+    return BUILDING_TIERS[building] || [{name:'Standard', mult:1}];
+  }
+
+  function defaultTierIdxFor(building){
+    const defs = getDefaults();
+    const tiers = tierListFor(building);
+    if (defs[building] !== undefined){
+      const idx = tiers.findIndex(t => t.mult === defs[building]);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }
+
+  function getSettings(recipeKey, building){
+    if (!state.nodeSettings[recipeKey]){
+      const defs = getDefaults();
+      state.nodeSettings[recipeKey] = {
+        tierIdx: defaultTierIdxFor(building),
+        customMult: null,
+        prolifTier: defs.prolifTier,
+        prolifMode: defs.prolifMode,
+      };
+    }
+    return state.nodeSettings[recipeKey];
+  }
+
+  function chosenRecipeFor(item){
+    if (state.selectedRecipe[item]) return state.selectedRecipe[item];
+    const list = itemRecipes[item];
+    if (!list || list.length === 0) return null;
+    return list[0];
+  }
+
+  // ---------- calculation ----------
+  function buildPlan(targetItem, targetRatePerMin){
+    const demand = {};      // item -> total rate/min
+    const order = [];       // first-seen order, target first
+    const seen = new Set();
+
+    function visit(item, rate){
+      demand[item] = (demand[item] || 0) + rate;
+      if (!seen.has(item)){ seen.add(item); order.push(item); }
+
+      const recipeKey = chosenRecipeFor(item);
+      if (!recipeKey) return; // raw / unsourced item, recursion stops
+
+      const recipe = RECIPES[recipeKey];
+      const resultEntry = recipe.r.find(r => r[0] === item);
+      const resultCount = resultEntry[1];
+      const settings = getSettings(recipeKey, recipe.b);
+      const prolif = PROLIF[settings.prolifTier] || PROLIF.none;
+      const productFactor = settings.prolifMode === 'product' ? (1 + prolif.product) : 1;
+
+      for (const [ingItem, ingCount] of recipe.i){
+        const ingRate = rate * ingCount / (resultCount * productFactor);
+        visit(ingItem, ingRate);
+      }
+    }
+
+    visit(targetItem, targetRatePerMin);
+
+    const nodes = order.map(item => {
+      const recipeKey = chosenRecipeFor(item);
+      const rate = demand[item];
+      if (!recipeKey){
+        return { item, rate, raw:true };
+      }
+      const recipe = RECIPES[recipeKey];
+      const resultEntry = recipe.r.find(r => r[0] === item);
+      const resultCount = resultEntry[1];
+      const settings = getSettings(recipeKey, recipe.b);
+      const tiers = tierListFor(recipe.b);
+      const buildingMult = settings.customMult != null ? settings.customMult : tiers[settings.tierIdx].mult;
+      const prolif = PROLIF[settings.prolifTier] || PROLIF.none;
+      const speedFactor = settings.prolifMode === 'speed' ? (1 + prolif.speed) : 1;
+      const productFactor = settings.prolifMode === 'product' ? (1 + prolif.product) : 1;
+
+      const outputPerBuildingPerMin = (resultCount / recipe.t) * 60 * buildingMult * speedFactor * productFactor;
+      const buildingsExact = rate / outputPerBuildingPerMin;
+      const buildingsNeeded = Math.ceil(buildingsExact - 1e-9);
+
+      return {
+        item, rate, raw:false,
+        recipeKey, recipe, resultCount,
+        building: recipe.b,
+        buildingsExact, buildingsNeeded,
+        ingredients: recipe.i.map(([ingItem, ingCount]) => ({
+          item: ingItem,
+          rate: rate * ingCount / (resultCount * productFactor),
+        })),
+      };
+    });
+
+    return { nodes, demand };
+  }
+
+  // ---------- rendering ----------
+  const resultsContent = document.getElementById('results-content');
+  const emptyState = document.getElementById('empty-state');
+  const chainEl = document.getElementById('chain');
+  const summaryEl = document.getElementById('summary-strip');
+
+  function fmt(n){
+    if (n === 0) return '0';
+    if (n < 0.01) return n.toExponential(1);
+    if (n < 10) return n.toFixed(2).replace(/\.?0+$/,'');
+    if (n < 1000) return n.toFixed(1).replace(/\.0$/,'');
+    return Math.round(n).toLocaleString();
+  }
+
+  function render(){
+    if (!state.targetItem){
+      emptyState.style.display = '';
+      resultsContent.style.display = 'none';
+      return;
+    }
+    emptyState.style.display = 'none';
+    resultsContent.style.display = '';
+
+    const { nodes } = buildPlan(state.targetItem, state.targetRate);
+
+    // summary
+    const buildingTotals = {}; // "Building Tier" -> count
+    let rawCount = 0;
+    for (const n of nodes){
+      if (n.raw){ rawCount++; continue; }
+      const tiers = tierListFor(n.building);
+      const settings = getSettings(n.recipeKey, n.building);
+      const tierName = settings.customMult != null ? 'custom' : tiers[settings.tierIdx].name;
+      const label = displayBuilding(n.building) + ' — ' + tierName;
+      buildingTotals[label] = (buildingTotals[label] || 0) + n.buildingsNeeded;
+    }
+    const totalBuildings = Object.values(buildingTotals).reduce((a,b)=>a+b,0);
+    const distinctSteps = nodes.filter(n=>!n.raw).length;
+
+    summaryEl.innerHTML = `
+      <div class="stat"><div class="num">${fmt(state.targetRate)}</div><div class="lbl">${displayItem(state.targetItem)} / min</div></div>
+      <div class="stat"><div class="num">${totalBuildings}</div><div class="lbl">Total buildings</div></div>
+      <div class="stat"><div class="num">${distinctSteps}</div><div class="lbl">Production steps</div></div>
+      <div class="stat"><div class="num">${rawCount}</div><div class="lbl">Unsourced inputs</div></div>
+    `;
+
+    // chain
+    let html = '';
+    nodes.forEach((n, idx) => {
+      if (idx > 0) html += `<div class="belt"></div>`;
+
+      if (n.raw){
+        html += `
+          <div class="node is-raw">
+            <div class="node-top">
+              <div>
+                <div class="node-name">${displayItem(n.item)}</div>
+                <div class="node-tag">no known recipe · gathered / stockpiled</div>
+              </div>
+              <div class="node-rate">
+                <div class="rate-num">${fmt(n.rate)}</div>
+                <div class="rate-lbl">per min</div>
+              </div>
+            </div>
+          </div>`;
+        return;
+      }
+
+      const isTarget = n.item === state.targetItem;
+      const altRecipes = itemRecipes[n.item];
+      const hasAlts = altRecipes.length > 1;
+      const tiers = tierListFor(n.building);
+      const settings = getSettings(n.recipeKey, n.building);
+
+      let recipeSelectHtml = '';
+      if (hasAlts){
+        recipeSelectHtml = `
+          <div class="ctrl-field">
+            <label>Recipe</label>
+            <select data-role="recipe-select" data-item="${n.item}">
+              ${altRecipes.map(rk => `<option value="${rk}" ${rk===n.recipeKey?'selected':''}>${prettify(rk)}</option>`).join('')}
+            </select>
+          </div>`;
+      }
+
+      const tierSelectHtml = `
+        <div class="ctrl-field">
+          <label>Building tier</label>
+          <select data-role="tier-select" data-recipe="${n.recipeKey}" data-building="${n.building}">
+            ${tiers.map((t,i) => `<option value="${i}" ${i===settings.tierIdx && settings.customMult==null ? 'selected':''}>${t.name} (${t.mult}×)</option>`).join('')}
+          </select>
+        </div>`;
+
+      const prolifSelectHtml = `
+        <div class="ctrl-field">
+          <label>Proliferator</label>
+          <select data-role="prolif-tier" data-recipe="${n.recipeKey}">
+            <option value="none" ${settings.prolifTier==='none'?'selected':''}>None</option>
+            <option value="mk1" ${settings.prolifTier==='mk1'?'selected':''}>Mk.I</option>
+            <option value="mk2" ${settings.prolifTier==='mk2'?'selected':''}>Mk.II</option>
+            <option value="mk3" ${settings.prolifTier==='mk3'?'selected':''}>Mk.III</option>
+          </select>
+        </div>`;
+
+      const prolifModeHtml = settings.prolifTier !== 'none' ? `
+        <div class="ctrl-field">
+          <label>Mode</label>
+          <select data-role="prolif-mode" data-recipe="${n.recipeKey}">
+            <option value="speed" ${settings.prolifMode==='speed'?'selected':''}>Extra speed</option>
+            <option value="product" ${settings.prolifMode==='product'?'selected':''}>Extra product</option>
+          </select>
+        </div>` : '';
+
+      const ingHtml = n.ingredients.length ? `
+        <div class="ing-list">
+          ${n.ingredients.map(ig => `<div>${fmt(ig.rate)}/min <span class="ing-name">${displayItem(ig.item)}</span></div>`).join('')}
+        </div>` : `<div class="ing-list"><div>No inputs — extracted directly</div></div>`;
+
+      html += `
+        <div class="node ${isTarget ? 'is-target':''}">
+          <div class="node-top">
+            <div>
+              <div class="node-name">${displayItem(n.item)}</div>
+              <div class="node-tag">${displayBuilding(n.building)} · ${prettify(n.recipeKey)}</div>
+            </div>
+            <div class="node-rate">
+              <div class="rate-num">${fmt(n.rate)}</div>
+              <div class="rate-lbl">per min</div>
+            </div>
+          </div>
+
+          <div class="node-controls">
+            ${recipeSelectHtml}
+            ${tierSelectHtml}
+            ${prolifSelectHtml}
+            ${prolifModeHtml}
+          </div>
+
+          <div class="building-count">
+            <span class="count">${n.buildingsNeeded}×</span>
+            <span class="blabel">${displayBuilding(n.building)}</span>
+            <span class="exact">(exact: ${n.buildingsExact.toFixed(2)})</span>
+          </div>
+
+          ${ingHtml}
+        </div>`;
+    });
+
+    chainEl.innerHTML = html;
+    attachNodeListeners();
+  }
+
+  function attachNodeListeners(){
+    chainEl.querySelectorAll('[data-role="recipe-select"]').forEach(sel => {
+      sel.addEventListener('change', e => {
+        state.selectedRecipe[e.target.dataset.item] = e.target.value;
+        render();
+      });
+    });
+    chainEl.querySelectorAll('[data-role="tier-select"]').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const rk = e.target.dataset.recipe;
+        const building = e.target.dataset.building;
+        const s = getSettings(rk, building);
+        s.tierIdx = parseInt(e.target.value, 10);
+        s.customMult = null;
+        render();
+      });
+    });
+    chainEl.querySelectorAll('[data-role="prolif-tier"]').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const rk = e.target.dataset.recipe;
+        const s = state.nodeSettings[rk];
+        s.prolifTier = e.target.value;
+        render();
+      });
+    });
+    chainEl.querySelectorAll('[data-role="prolif-mode"]').forEach(sel => {
+      sel.addEventListener('change', e => {
+        const rk = e.target.dataset.recipe;
+        const s = state.nodeSettings[rk];
+        s.prolifMode = e.target.value;
+        render();
+      });
+    });
+  }
+
+  // ---------- autocomplete ----------
+  const searchInput = document.getElementById('item-search');
+  const acList = document.getElementById('ac-list');
+  const calcBtn = document.getElementById('calc-btn');
+  let acActiveIdx = -1;
+  let acMatches = [];
+
+  function openAc(matches){
+    acMatches = matches;
+    acActiveIdx = -1;
+    if (matches.length === 0){ acList.classList.remove('open'); acList.innerHTML=''; return; }
+    acList.innerHTML = matches.slice(0,40).map((item,i) => {
+      const rk = itemRecipes[item] ? itemRecipes[item][0] : null;
+      const building = rk ? displayBuilding(RECIPES[rk].b) : 'raw material';
+      return `<div class="ac-item" data-idx="${i}"><span>${displayItem(item)}</span><span class="made-in">${building}</span></div>`;
+    }).join('');
+    acList.classList.add('open');
+    acList.querySelectorAll('.ac-item').forEach(el => {
+      el.addEventListener('click', () => selectItem(acMatches[parseInt(el.dataset.idx,10)]));
+    });
+  }
+
+  function closeAc(){ acList.classList.remove('open'); acList.innerHTML=''; }
+
+  function selectItem(item){
+    state.targetItem = item;
+    searchInput.value = displayItem(item);
+    closeAc();
+    calcBtn.disabled = false;
+  }
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    calcBtn.disabled = true;
+    state.targetItem = null;
+    if (q.length === 0){ closeAc(); return; }
+    const matches = sortedItemNames.filter(item => displayItem(item).toLowerCase().includes(q));
+    openAc(matches);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    const items = acList.querySelectorAll('.ac-item');
+    if (e.key === 'ArrowDown'){
+      e.preventDefault();
+      acActiveIdx = Math.min(acActiveIdx+1, items.length-1);
+      items.forEach((el,i)=>el.classList.toggle('active', i===acActiveIdx));
+    } else if (e.key === 'ArrowUp'){
+      e.preventDefault();
+      acActiveIdx = Math.max(acActiveIdx-1, 0);
+      items.forEach((el,i)=>el.classList.toggle('active', i===acActiveIdx));
+    } else if (e.key === 'Enter'){
+      e.preventDefault();
+      if (acActiveIdx >= 0 && acMatches[acActiveIdx]) selectItem(acMatches[acActiveIdx]);
+      else if (acMatches.length === 1) selectItem(acMatches[0]);
+    } else if (e.key === 'Escape'){
+      closeAc();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.autocomplete-wrap')) closeAc();
+  });
+
+  // ---------- rate input ----------
+  const rateInput = document.getElementById('rate-input');
+  const rateUnit = document.getElementById('rate-unit');
+  function currentRatePerMin(){
+    const v = parseFloat(rateInput.value) || 0;
+    return rateUnit.value === 'sec' ? v * 60 : v;
+  }
+
+  calcBtn.addEventListener('click', () => {
+    if (!state.targetItem) return;
+    state.targetRate = currentRatePerMin();
+    // reset per-recipe settings so new defaults panel values apply fresh
+    state.nodeSettings = {};
+    render();
+  });
+
+  // if user tweaks rate after already calculating once, recompute live
+  [rateInput, rateUnit].forEach(el => {
+    el.addEventListener('change', () => {
+      if (state.targetItem && resultsContent.style.display !== 'none'){
+        state.targetRate = currentRatePerMin();
+        render();
+      }
+    });
+  });
+
+  document.getElementById('recipe-count-badge').textContent = Object.keys(RECIPES).length + ' RECIPES LOADED';
+
+})();
+
+</script>
+</body>
+</html>
