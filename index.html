@@ -248,18 +248,72 @@
   .node.is-target{border-left-color:var(--amber);}
   .node.is-raw{border-left-color:var(--text-dim); opacity:0.9;}
 
-  .belt{
-    height:22px;
-    margin-left:24px;
-    border-left:2px dashed var(--line);
-    position:relative;
+  .tier-header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:20px 0 8px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--teal);
   }
-  .belt::after{
-    content:"▾";
-    position:absolute;
-    left:-8px; top:2px;
+  .tier-header:first-child{margin-top:0;}
+  .tier-header::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--line);
+  }
+
+  .link-row{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+    margin-top:10px;
+  }
+  .link-row.used-in{margin-top:8px;}
+  .link-label{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.62rem;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
     color:var(--text-dim);
-    font-size:0.7rem;
+    margin-right:2px;
+  }
+  .chip{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    color:var(--text-mute);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:4px 10px;
+    cursor:pointer;
+    line-height:1.3;
+  }
+  .chip:hover{
+    color:var(--amber);
+    border-color:var(--amber-dim);
+  }
+  .used-in .chip{color:var(--teal); border-color:var(--teal-dim);}
+  .used-in .chip:hover{color:var(--amber); border-color:var(--amber-dim);}
+
+  .target-flag{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.62rem;
+    color:var(--amber);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    font-weight:400;
+  }
+
+  .node{scroll-margin-top:20px;}
+  .node.flash{
+    border-color:var(--amber);
+    box-shadow:0 0 0 1px var(--amber-dim);
   }
 
   .node-top{
@@ -697,14 +751,57 @@
       <div class="stat"><div class="num">${rawCount}</div><div class="lbl">Unsourced inputs</div></div>
     `;
 
-    // chain
+    // ---- organize into dependency tiers (depth 0 = target) ----
+    const byItem = {};
+    nodes.forEach(n => byItem[n.item] = n);
+    const childrenOf = item => (byItem[item] && !byItem[item].raw) ? byItem[item].ingredients : [];
+    const parentsMap = {}; // item -> Set of parent items that consume it
+    nodes.forEach(n => childrenOf(n.item).forEach(c => {
+      (parentsMap[c.item] = parentsMap[c.item] || new Set()).add(n.item);
+    }));
+
+    const depth = {};
+    depth[state.targetItem] = 0;
+    const queue = [state.targetItem];
+    for (let qi = 0; qi < queue.length; qi++){
+      const cur = queue[qi];
+      for (const c of childrenOf(cur)){
+        if (depth[c.item] === undefined){ depth[c.item] = depth[cur] + 1; queue.push(c.item); }
+      }
+    }
+    const origIndex = {};
+    nodes.forEach((n,i) => origIndex[n.item] = i);
+    const ordered = nodes.slice().sort((a,b) => {
+      const da = depth[a.item] ?? 999, db = depth[b.item] ?? 999;
+      if (da !== db) return da - db;
+      return origIndex[a.item] - origIndex[b.item];
+    });
+
+    const nodeDomId = item => 'node-' + item.replace(/[^a-zA-Z0-9]/g, '');
+
+    function usedInHtml(item){
+      const parents = parentsMap[item] ? Array.from(parentsMap[item]) : [];
+      if (parents.length === 0) return '';
+      return `<div class="link-row used-in">
+        <span class="link-label">used in</span>
+        ${parents.map(p => `<button type="button" class="chip" data-jump="${nodeDomId(p)}">${displayItem(p)}</button>`).join('')}
+      </div>`;
+    }
+
+    // ---- chain ----
     let html = '';
-    nodes.forEach((n, idx) => {
-      if (idx > 0) html += `<div class="belt"></div>`;
+    let lastDepth = null;
+    ordered.forEach((n) => {
+      const d = depth[n.item] ?? 0;
+      if (d !== lastDepth){
+        const tierLabel = d === 0 ? 'Target' : `Tier ${d} — ${d} step${d>1?'s':''} upstream`;
+        html += `<div class="tier-header"><span>${tierLabel}</span></div>`;
+        lastDepth = d;
+      }
 
       if (n.raw){
         html += `
-          <div class="node is-raw">
+          <div class="node is-raw" id="${nodeDomId(n.item)}">
             <div class="node-top">
               <div>
                 <div class="node-name">${displayItem(n.item)}</div>
@@ -715,6 +812,7 @@
                 <div class="rate-lbl">per min</div>
               </div>
             </div>
+            ${usedInHtml(n.item)}
           </div>`;
         return;
       }
@@ -765,15 +863,16 @@
         </div>` : '';
 
       const ingHtml = n.ingredients.length ? `
-        <div class="ing-list">
-          ${n.ingredients.map(ig => `<div>${fmt(ig.rate)}/min <span class="ing-name">${displayItem(ig.item)}</span></div>`).join('')}
-        </div>` : `<div class="ing-list"><div>No inputs — extracted directly</div></div>`;
+        <div class="link-row feeds-from">
+          <span class="link-label">needs</span>
+          ${n.ingredients.map(ig => `<button type="button" class="chip" data-jump="${nodeDomId(ig.item)}">${fmt(ig.rate)}/min ${displayItem(ig.item)}</button>`).join('')}
+        </div>` : `<div class="link-row feeds-from"><span class="link-label">extracted directly, no inputs</span></div>`;
 
       html += `
-        <div class="node ${isTarget ? 'is-target':''}">
+        <div class="node ${isTarget ? 'is-target':''}" id="${nodeDomId(n.item)}">
           <div class="node-top">
             <div>
-              <div class="node-name">${displayItem(n.item)}</div>
+              <div class="node-name">${displayItem(n.item)}${isTarget ? ' <span class=\"target-flag\">— target</span>':''}</div>
               <div class="node-tag">${displayBuilding(n.building)} · ${prettify(n.recipeKey)}</div>
             </div>
             <div class="node-rate">
@@ -781,6 +880,8 @@
               <div class="rate-lbl">per min</div>
             </div>
           </div>
+
+          ${usedInHtml(n.item)}
 
           <div class="node-controls">
             ${recipeSelectHtml}
@@ -803,7 +904,21 @@
     attachNodeListeners();
   }
 
+  function jumpTo(domId){
+    const el = document.getElementById(domId);
+    if (!el) return;
+    if (typeof el.scrollIntoView === 'function'){
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    el.classList.add('flash');
+    window.clearTimeout(el._flashTimer);
+    el._flashTimer = window.setTimeout(() => el.classList.remove('flash'), 1000);
+  }
+
   function attachNodeListeners(){
+    chainEl.querySelectorAll('[data-jump]').forEach(btn => {
+      btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
+    });
     chainEl.querySelectorAll('[data-role="recipe-select"]').forEach(sel => {
       sel.addEventListener('change', e => {
         state.selectedRecipe[e.target.dataset.item] = e.target.value;
