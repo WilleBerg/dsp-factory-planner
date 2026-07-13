@@ -310,10 +310,64 @@
     font-weight:400;
   }
 
-  .node{scroll-margin-top:20px;}
+  .node{scroll-margin-top:20px; cursor:pointer; transition:opacity .2s ease, filter .2s ease;}
   .node.flash{
     border-color:var(--amber);
     box-shadow:0 0 0 1px var(--amber-dim);
+  }
+  .node.is-focused{
+    border-color:var(--amber);
+    box-shadow:0 0 0 1px var(--amber);
+    background:var(--panel-2);
+  }
+  .node.is-related{
+    border-left-color:var(--teal);
+  }
+  .node.is-dimmed{
+    opacity:0.28;
+    filter:grayscale(0.7);
+  }
+  .node.is-dimmed:hover{
+    opacity:0.55;
+    filter:grayscale(0.3);
+  }
+
+  .focus-hint{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    color:var(--text-dim);
+    margin-bottom:14px;
+  }
+  .focus-banner{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:10px;
+    background:var(--panel-2);
+    border:1px solid var(--teal-dim);
+    border-radius:var(--radius);
+    padding:10px 14px;
+    margin-bottom:16px;
+    font-size:0.8rem;
+    color:var(--text-mute);
+  }
+  .focus-banner strong{color:var(--amber);}
+  .focus-banner #clear-focus-btn{
+    margin-left:auto;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text-mute);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.66rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    padding:5px 10px;
+    border-radius:var(--radius);
+    cursor:pointer;
+  }
+  .focus-banner #clear-focus-btn:hover{
+    color:var(--amber);
+    border-color:var(--amber-dim);
   }
 
   .node-top{
@@ -505,7 +559,9 @@
   "use strict";
 
   // ---------- data ----------
-  const RECIPES = JSON.parse(document.getElementById('recipe-data').textContent);
+  // Embedded copy = the offline fallback, guaranteed to work even with no network / storage access.
+  const EMBEDDED_RECIPES = JSON.parse(document.getElementById('recipe-data').textContent);
+  let RECIPES = EMBEDDED_RECIPES;
 
   const DISPLAY_OVERRIDES = {
     'AssemblingMachineMK1':'Assembling Machine Mk.I',
@@ -554,18 +610,110 @@
   function displayItem(name){ return prettify(name); }
   function displayBuilding(b){ return BUILDING_DISPLAY[b] || prettify(b); }
 
-  // ---------- indices ----------
-  const itemRecipes = {}; // item -> [recipeKey,...] (in JSON order = preferred default first)
-  const allItems = new Set();
-  for (const [key, rec] of Object.entries(RECIPES)){
-    for (const [item] of rec.r){
-      if (!itemRecipes[item]) itemRecipes[item] = [];
-      itemRecipes[item].push(key);
-      allItems.add(item);
+  // ---------- indices (rebuilt whenever RECIPES is swapped for fresh data) ----------
+  let itemRecipes = {};   // item -> [recipeKey,...] (order = preferred default first)
+  let allItems = new Set();
+  let sortedItemNames = [];
+
+  function rebuildIndices(){
+    itemRecipes = {};
+    allItems = new Set();
+    for (const [key, rec] of Object.entries(RECIPES)){
+      for (const [item] of rec.r){
+        if (!itemRecipes[item]) itemRecipes[item] = [];
+        itemRecipes[item].push(key);
+        allItems.add(item);
+      }
+      for (const [item] of rec.i) allItems.add(item);
     }
-    for (const [item] of rec.i) allItems.add(item);
+    sortedItemNames = Array.from(allItems).sort((a,b) => displayItem(a).localeCompare(displayItem(b)));
   }
-  const sortedItemNames = Array.from(allItems).sort((a,b) => displayItem(a).localeCompare(displayItem(b)));
+  rebuildIndices();
+
+  // ---------- live data source + localStorage cache ----------
+  const RECIPE_SOURCE_URL = 'https://raw.githubusercontent.com/gamma-delta/center-brain-archive/gh-pages/dsp.json';
+  const CACHE_KEY = 'dsp-planner-recipes-v1';
+  const BACKGROUND_REFRESH_AGE_MS = 6 * 60 * 60 * 1000; // re-check network if cache older than this
+
+  function normalizeRawRecipes(raw){
+    const out = {};
+    for (const [key, v] of Object.entries(raw)){
+      if (!v || !Array.isArray(v.ingredients) || !Array.isArray(v.results)) continue;
+      out[key] = {
+        i: v.ingredients.map(x => [x.item, x.count]),
+        r: v.results.map(x => [x.item, x.count]),
+        t: v.time,
+        b: v.made_in,
+      };
+    }
+    return out;
+  }
+
+  function setStatus(text){
+    const el = document.getElementById('recipe-count-badge');
+    if (el) el.textContent = text;
+  }
+
+  function timeAgo(ts){
+    const mins = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    return Math.round(hrs / 24) + 'd ago';
+  }
+
+  function loadFromCache(){
+    try {
+      const raw = window.localStorage.getItem(CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.recipes || !parsed.ts || Object.keys(parsed.recipes).length < 50) return null;
+      return parsed;
+    } catch (e) { return null; }
+  }
+
+  function saveToCache(recipesObj){
+    try {
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify({ recipes: recipesObj, ts: Date.now() }));
+    } catch (e) { /* storage unavailable/full — live/embedded data still works this session */ }
+  }
+
+  function applyRecipes(recipesObj, statusLabel){
+    RECIPES = recipesObj;
+    rebuildIndices();
+    setStatus(Object.keys(RECIPES).length + ' RECIPES · ' + statusLabel);
+    if (state.targetItem) render(); // keep an open chain in sync if fresher data lands
+  }
+
+  async function refreshFromNetwork(isBackground){
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(RECIPE_SOURCE_URL, { signal: controller.signal, cache: 'no-cache' });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      const normalized = normalizeRawRecipes(json.recipes || {});
+      if (Object.keys(normalized).length < 50) throw new Error('unexpected payload shape');
+      saveToCache(normalized);
+      applyRecipes(normalized, 'live');
+    } catch (err) {
+      if (!isBackground) setStatus(Object.keys(RECIPES).length + ' RECIPES · offline bundle');
+      // background refresh fails silently — whatever data is already loaded keeps working
+    }
+  }
+
+  function bootRecipes(){
+    const cached = loadFromCache();
+    if (cached){
+      applyRecipes(cached.recipes, 'cached ' + timeAgo(cached.ts));
+      if (Date.now() - cached.ts > BACKGROUND_REFRESH_AGE_MS) refreshFromNetwork(true);
+    } else {
+      setStatus(Object.keys(RECIPES).length + ' RECIPES · offline bundle');
+      refreshFromNetwork(false);
+    }
+  }
 
   // ---------- building tiers ----------
   const BUILDING_TIERS = {
@@ -596,6 +744,7 @@
     targetRate: 60, // per minute, normalized
     selectedRecipe: {},   // item -> recipeKey override
     nodeSettings: {},     // recipeKey -> {tierIdx, prolifTier, prolifMode}
+    focusItem: null,      // item currently traced/highlighted, or null
   };
 
   function getDefaults(){
@@ -636,7 +785,8 @@
   }
 
   function chosenRecipeFor(item){
-    if (state.selectedRecipe[item]) return state.selectedRecipe[item];
+    const sel = state.selectedRecipe[item];
+    if (sel && RECIPES[sel]) return sel;
     const list = itemRecipes[item];
     if (!list || list.length === 0) return null;
     return list[0];
@@ -711,6 +861,15 @@
   const chainEl = document.getElementById('chain');
   const summaryEl = document.getElementById('summary-strip');
 
+  chainEl.addEventListener('click', (e) => {
+    if (e.target.closest('select, .chip, .node-controls, #clear-focus-btn')) return;
+    const nodeEl = e.target.closest('.node');
+    if (!nodeEl || !nodeEl.dataset.item) return;
+    const item = nodeEl.dataset.item;
+    state.focusItem = (state.focusItem === item) ? null : item;
+    render();
+  });
+
   function fmt(n){
     if (n === 0) return '0';
     if (n < 0.01) return n.toExponential(1);
@@ -720,6 +879,7 @@
   }
 
   function render(){
+    const savedScrollY = window.scrollY;
     if (!state.targetItem){
       emptyState.style.display = '';
       resultsContent.style.display = 'none';
@@ -788,8 +948,29 @@
       </div>`;
     }
 
+    // ---- click-to-trace focus: highlight an item's full ancestor + descendant chain ----
+    if (state.focusItem && !byItem[state.focusItem]) state.focusItem = null; // stale focus, e.g. after switching alt recipe
+    let relatedSet = null;
+    if (state.focusItem){
+      relatedSet = new Set([state.focusItem]);
+      (function up(it){
+        const parents = parentsMap[it] ? Array.from(parentsMap[it]) : [];
+        for (const p of parents) if (!relatedSet.has(p)){ relatedSet.add(p); up(p); }
+      })(state.focusItem);
+      (function down(it){
+        for (const c of childrenOf(it)) if (!relatedSet.has(c.item)){ relatedSet.add(c.item); down(c.item); }
+      })(state.focusItem);
+    }
+
+    const focusBannerHtml = state.focusItem ? `
+      <div class="focus-banner">
+        Tracing <strong>${displayItem(state.focusItem)}</strong> — everything it needs and everything that needs it. Rest is dimmed.
+        <button type="button" id="clear-focus-btn">Clear</button>
+      </div>` : `
+      <div class="focus-hint">Click any step below to trace its full chain — click it again to reset.</div>`;
+
     // ---- chain ----
-    let html = '';
+    let html = focusBannerHtml;
     let lastDepth = null;
     ordered.forEach((n) => {
       const d = depth[n.item] ?? 0;
@@ -799,9 +980,14 @@
         lastDepth = d;
       }
 
+      let stateClass = '';
+      if (relatedSet){
+        stateClass = n.item === state.focusItem ? 'is-focused' : (relatedSet.has(n.item) ? 'is-related' : 'is-dimmed');
+      }
+
       if (n.raw){
         html += `
-          <div class="node is-raw" id="${nodeDomId(n.item)}">
+          <div class="node is-raw ${stateClass}" id="${nodeDomId(n.item)}" data-item="${n.item}">
             <div class="node-top">
               <div>
                 <div class="node-name">${displayItem(n.item)}</div>
@@ -869,7 +1055,7 @@
         </div>` : `<div class="link-row feeds-from"><span class="link-label">extracted directly, no inputs</span></div>`;
 
       html += `
-        <div class="node ${isTarget ? 'is-target':''}" id="${nodeDomId(n.item)}">
+        <div class="node ${isTarget ? 'is-target':''} ${stateClass}" id="${nodeDomId(n.item)}" data-item="${n.item}">
           <div class="node-top">
             <div>
               <div class="node-name">${displayItem(n.item)}${isTarget ? ' <span class=\"target-flag\">— target</span>':''}</div>
@@ -902,6 +1088,7 @@
 
     chainEl.innerHTML = html;
     attachNodeListeners();
+    window.scrollTo(0, savedScrollY);
   }
 
   function jumpTo(domId){
@@ -916,6 +1103,8 @@
   }
 
   function attachNodeListeners(){
+    const clearBtn = document.getElementById('clear-focus-btn');
+    if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); state.focusItem = null; render(); });
     chainEl.querySelectorAll('[data-jump]').forEach(btn => {
       btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
     });
@@ -1042,7 +1231,7 @@
     });
   });
 
-  document.getElementById('recipe-count-badge').textContent = Object.keys(RECIPES).length + ' RECIPES LOADED';
+  bootRecipes();
 
 })();
 
