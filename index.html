@@ -859,6 +859,81 @@
     return { nodes, demand };
   }
 
+  // ---------- last-search cache (client-side, 7 days) ----------
+  const SEARCH_CACHE_KEY = 'dsp-planner-last-search-v1';
+  const SEARCH_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  let restoredFromCache = false;
+
+  function saveSearchCache(){
+    if (!state.targetItem) return;
+    try {
+      window.localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({
+        ts: Date.now(),
+        targetItem: state.targetItem,
+        targetRate: state.targetRate,
+        rateInputValue: document.getElementById('rate-input').value,
+        rateUnit: document.getElementById('rate-unit').value,
+        selectedRecipe: state.selectedRecipe,
+        nodeSettings: state.nodeSettings,
+        defaults: {
+          assembler: document.getElementById('default-assembler').value,
+          smelter: document.getElementById('default-smelter').value,
+          chem: document.getElementById('default-chem').value,
+          prolif: document.getElementById('default-prolif').value,
+          prolifMode: document.getElementById('default-prolif-mode').value,
+        },
+      }));
+    } catch (e) { /* storage unavailable/full — search just won't persist this session */ }
+  }
+
+  function loadSearchCache(){
+    try {
+      const raw = window.localStorage.getItem(SEARCH_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.targetItem || !parsed.ts) return null;
+      if (Date.now() - parsed.ts > SEARCH_CACHE_MAX_AGE_MS) return null;
+      return parsed;
+    } catch (e) { return null; }
+  }
+
+  function clearSearchCache(){
+    try { window.localStorage.removeItem(SEARCH_CACHE_KEY); } catch (e) { /* ignore */ }
+    restoredFromCache = false;
+    state.targetItem = null;
+    state.selectedRecipe = {};
+    state.nodeSettings = {};
+    document.getElementById('item-search').value = '';
+    document.getElementById('calc-btn').disabled = true;
+    render();
+  }
+
+  function restoreSearchCache(){
+    const cached = loadSearchCache();
+    if (!cached || !allItems.has(cached.targetItem)) return;
+
+    if (cached.defaults){
+      const d = cached.defaults;
+      if (d.assembler) document.getElementById('default-assembler').value = d.assembler;
+      if (d.smelter) document.getElementById('default-smelter').value = d.smelter;
+      if (d.chem) document.getElementById('default-chem').value = d.chem;
+      if (d.prolif) document.getElementById('default-prolif').value = d.prolif;
+      if (d.prolifMode) document.getElementById('default-prolif-mode').value = d.prolifMode;
+    }
+    if (cached.rateInputValue != null) document.getElementById('rate-input').value = cached.rateInputValue;
+    if (cached.rateUnit) document.getElementById('rate-unit').value = cached.rateUnit;
+
+    state.targetItem = cached.targetItem;
+    state.targetRate = cached.targetRate ?? 60;
+    state.selectedRecipe = cached.selectedRecipe || {};
+    state.nodeSettings = cached.nodeSettings || {};
+    restoredFromCache = true;
+
+    document.getElementById('item-search').value = displayItem(cached.targetItem);
+    document.getElementById('calc-btn').disabled = false;
+    render();
+  }
+
   // ---------- rendering ----------
   const resultsContent = document.getElementById('results-content');
   const emptyState = document.getElementById('empty-state');
@@ -973,15 +1048,26 @@
       })(state.focusItem);
     }
 
-    const focusBannerHtml = state.focusItem ? `
-      <div class="focus-banner">
-        Tracing <strong>${displayItem(state.focusItem)}</strong> — everything it needs and everything that needs it. Rest is dimmed.
-        <button type="button" id="clear-focus-btn">Clear</button>
-      </div>` : `
-      <div class="focus-hint">Click any step below to trace its full chain — click it again to reset.</div>`;
+    let topBannerHtml;
+    if (state.focusItem){
+      topBannerHtml = `
+        <div class="focus-banner">
+          Tracing <strong>${displayItem(state.focusItem)}</strong> — everything it needs and everything that needs it. Rest is dimmed.
+          <button type="button" id="clear-focus-btn">Clear</button>
+        </div>`;
+    } else if (restoredFromCache){
+      topBannerHtml = `
+        <div class="focus-banner">
+          Restored your last search — <strong>${displayItem(state.targetItem)}</strong>.
+          <button type="button" id="clear-search-btn">Clear saved search</button>
+        </div>`;
+      restoredFromCache = false; // only show this once per restore
+    } else {
+      topBannerHtml = `<div class="focus-hint">Click any step below to trace its full chain — click it again to reset.</div>`;
+    }
 
     // ---- chain ----
-    let html = focusBannerHtml;
+    let html = topBannerHtml;
     let lastDepth = null;
     ordered.forEach((n) => {
       const d = depth[n.item] ?? 0;
@@ -1108,6 +1194,7 @@
     chainEl.innerHTML = html;
     attachNodeListeners();
     window.scrollTo(0, savedScrollY);
+    saveSearchCache();
   }
 
   function jumpTo(domId){
@@ -1124,6 +1211,8 @@
   function attachNodeListeners(){
     const clearBtn = document.getElementById('clear-focus-btn');
     if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); state.focusItem = null; render(); });
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+    if (clearSearchBtn) clearSearchBtn.addEventListener('click', (e) => { e.stopPropagation(); clearSearchCache(); });
     chainEl.querySelectorAll('[data-jump]').forEach(btn => {
       btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
     });
@@ -1251,6 +1340,7 @@
   });
 
   bootRecipes();
+  restoreSearchCache();
 
 })();
 
