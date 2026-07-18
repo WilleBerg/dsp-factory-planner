@@ -267,6 +267,14 @@
     background:var(--line);
   }
 
+  .catalyst-note{opacity:0.75;}
+  .catalyst-text{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.66rem;
+    color:var(--text-dim);
+    font-style:italic;
+  }
+
   .link-row{
     display:flex;
     flex-wrap:wrap;
@@ -313,6 +321,120 @@
     letter-spacing:0.05em;
     font-weight:400;
   }
+
+  .view-toggle{
+    display:flex;
+    gap:6px;
+    margin-bottom:16px;
+  }
+  .view-btn{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.7rem;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-mute);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:7px 14px;
+    cursor:pointer;
+  }
+  .view-btn:hover{color:var(--text);}
+  .view-btn.active{
+    color:#1a1000;
+    background:var(--amber);
+    border-color:var(--amber);
+    font-weight:700;
+  }
+
+  .diagram-wrap{
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .diagram-toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:8px 12px;
+    background:var(--panel-2);
+    border-bottom:1px solid var(--line);
+  }
+  .diagram-hint{
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.66rem;
+    color:var(--text-dim);
+  }
+  #diagram-reset-btn{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text-mute);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.66rem;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    padding:5px 10px;
+    border-radius:var(--radius);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  #diagram-reset-btn:hover{color:var(--amber); border-color:var(--amber-dim);}
+
+  #diagram-svg{
+    width:100%;
+    height:640px;
+    display:block;
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/32px 32px,
+      var(--bg);
+    cursor:grab;
+    touch-action:none;
+  }
+  #diagram-svg.is-dragging{cursor:grabbing;}
+
+  .dnode{cursor:pointer;}
+  .dnode-bg{
+    fill:var(--panel);
+    stroke:var(--line);
+    stroke-width:1;
+  }
+  .dnode.is-target .dnode-bg{stroke:var(--amber); stroke-width:2;}
+  .dnode.is-focused .dnode-bg{stroke:var(--amber); stroke-width:2; fill:var(--panel-2);}
+  .dnode.is-related .dnode-bg{stroke:var(--teal); stroke-width:1.5;}
+  .dnode.is-raw .dnode-bg{stroke:var(--text-dim); stroke-dasharray:3 2;}
+  .dnode.is-dimmed{opacity:0.22;}
+  .dnode-name{
+    fill:var(--text);
+    font:600 12px 'Space Grotesk', sans-serif;
+  }
+  .dnode-sub{
+    fill:var(--text-dim);
+    font:10px 'JetBrains Mono', monospace;
+    text-transform:uppercase;
+  }
+  .dnode-rate{
+    fill:var(--teal);
+    font:600 11px 'JetBrains Mono', monospace;
+  }
+  .edge{
+    fill:none;
+    stroke:var(--line);
+    stroke-width:1.5;
+  }
+  .edge.is-dimmed{opacity:0.12;}
+  .edge.is-related{stroke:var(--teal-dim);}
+  .edge-label rect{
+    fill:var(--panel);
+    stroke:var(--line);
+    stroke-width:1;
+  }
+  .edge-label text{
+    fill:var(--amber);
+    font:600 10px 'JetBrains Mono', monospace;
+  }
+  .edge-label.is-dimmed{opacity:0.15;}
 
   .node{scroll-margin-top:20px; cursor:pointer; transition:opacity .2s ease, filter .2s ease;}
   .node.flash{
@@ -545,7 +667,19 @@
       </div>
       <div id="results-content" style="display:none;">
         <div class="summary-strip" id="summary-strip"></div>
+        <div id="top-banner"></div>
+        <div class="view-toggle">
+          <button type="button" class="view-btn active" data-view="list">List</button>
+          <button type="button" class="view-btn" data-view="diagram">Diagram</button>
+        </div>
         <div class="chain" id="chain"></div>
+        <div class="diagram-wrap" id="diagram-wrap" style="display:none;">
+          <div class="diagram-toolbar">
+            <span class="diagram-hint">Drag to pan · scroll to zoom · click a node to trace its chain</span>
+            <button type="button" id="diagram-reset-btn">Reset view</button>
+          </div>
+          <svg id="diagram-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
       </div>
     </div>
   </div>
@@ -565,7 +699,35 @@
   // ---------- data ----------
   // Embedded copy = the offline fallback, guaranteed to work even with no network / storage access.
   const EMBEDDED_RECIPES = JSON.parse(document.getElementById('recipe-data').textContent);
-  let RECIPES = EMBEDDED_RECIPES;
+
+  // The community source (center-brain-archive) is a great baseline but isn't 100% complete —
+  // it appears to reflect an older game snapshot and is missing at least one known recipe.
+  // This patch is merged on top of EVERY data source (embedded, cached, or freshly fetched)
+  // so gaps like this stay fixed even if the upstream data hasn't caught up.
+  const SUPPLEMENTAL_RECIPES = {
+    // Reformed Refinement (Oil Refinery): 2 Refined Oil + 1 Hydrogen + 1 Coal -> 3 Refined Oil.
+    // Confirmed against the DSP wiki and community recipe references — missing from the source dataset entirely.
+    ReformedRefinement: {
+      i: [['RefinedOil', 2], ['Hydrogen', 1], ['CoalOre', 1]],
+      r: [['RefinedOil', 3]],
+      t: 4,
+      b: 'OilRefinery',
+    },
+    // Solar Sail (Assembling Machine): 1 Graphene + 1 Photon Combiner -> 2 Solar Sail, 4s.
+    // Confirmed against dyson-calculator.com's recipe reference — also entirely missing from the source dataset.
+    SolarSail: {
+      i: [['Graphene', 1], ['PhotonCombiner', 1]],
+      r: [['SolarSail', 2]],
+      t: 4,
+      b: 'AssemblingMachine',
+    },
+  };
+
+  function withSupplementalRecipes(recipesObj){
+    return Object.assign({}, recipesObj, SUPPLEMENTAL_RECIPES);
+  }
+
+  let RECIPES = withSupplementalRecipes(EMBEDDED_RECIPES);
 
   const DISPLAY_OVERRIDES = {
     'AssemblingMachineMK1':'Assembling Machine Mk.I',
@@ -684,7 +846,7 @@
   }
 
   function applyRecipes(recipesObj, statusLabel){
-    RECIPES = recipesObj;
+    RECIPES = withSupplementalRecipes(recipesObj);
     rebuildIndices();
     setStatus(Object.keys(RECIPES).length + ' RECIPES · ' + statusLabel);
     if (state.targetItem) render(); // keep an open chain in sync if fresher data lands
@@ -749,7 +911,12 @@
     selectedRecipe: {},   // item -> recipeKey override
     nodeSettings: {},     // recipeKey -> {tierIdx, prolifTier, prolifMode}
     focusItem: null,      // item currently traced/highlighted, or null
+    viewMode: 'list',      // 'list' | 'diagram'
   };
+
+  const DIAGRAM_VIEWPORT_W = 1000;
+  const DIAGRAM_VIEWPORT_H = 620;
+  let diagramView = null; // {x, y, scale} — null means "not yet fit to content"
 
   function getDefaults(){
     return {
@@ -802,27 +969,52 @@
     const order = [];       // first-seen order, target first
     const seen = new Set();
 
-    function visit(item, rate){
+    // For a normal recipe, resultCount*productFactor is what one cycle yields.
+    // For a catalyst recipe (item also appears in its own ingredients, e.g. Reformed
+    // Refinement: 2 Refined Oil + 1 Hydrogen + 1 Coal -> 3 Refined Oil), only the NET
+    // output (gross output minus the self-consumed portion) is externally available —
+    // the rest is recycled within the same cycle. Using net output here also stops the
+    // demand traversal from recursing into itself forever.
+    function netOutputInfo(item, recipe, settings){
+      const resultEntry = recipe.r.find(r => r[0] === item);
+      const resultCount = resultEntry[1];
+      const selfIng = recipe.i.find(i => i[0] === item);
+      const selfIngCount = selfIng ? selfIng[1] : 0;
+      const prolif = PROLIF[settings.prolifTier] || PROLIF.none;
+      const productFactor = settings.prolifMode === 'product' ? (1 + prolif.product) : 1;
+      const netResult = Math.max(resultCount * productFactor - selfIngCount, 1e-6);
+      return { resultCount, selfIngCount, productFactor, netResult };
+    }
+
+    function visit(item, rate, ancestorPath){
       demand[item] = (demand[item] || 0) + rate;
       if (!seen.has(item)){ seen.add(item); order.push(item); }
+
+      // General cycle guard: if this item is already an ancestor of itself in the current
+      // branch (e.g. picking X-Ray Cracking for Hydrogen while Refined Oil uses Reformed
+      // Refinement — each needs the other), stop recursing this branch here rather than
+      // looping forever. The single-item catalyst case below (item feeding itself within
+      // ONE recipe) is handled separately via net output, this covers multi-item loops.
+      if (ancestorPath && ancestorPath.has(item)) return;
 
       const recipeKey = chosenRecipeFor(item);
       if (!recipeKey) return; // raw / unsourced item, recursion stops
 
       const recipe = RECIPES[recipeKey];
-      const resultEntry = recipe.r.find(r => r[0] === item);
-      const resultCount = resultEntry[1];
       const settings = getSettings(recipeKey, recipe.b);
-      const prolif = PROLIF[settings.prolifTier] || PROLIF.none;
-      const productFactor = settings.prolifMode === 'product' ? (1 + prolif.product) : 1;
+      const { netResult } = netOutputInfo(item, recipe, settings);
+
+      const nextPath = ancestorPath ? new Set(ancestorPath) : new Set();
+      nextPath.add(item);
 
       for (const [ingItem, ingCount] of recipe.i){
-        const ingRate = rate * ingCount / (resultCount * productFactor);
-        visit(ingItem, ingRate);
+        if (ingItem === item) continue; // single-recipe catalyst: already netted out above, don't recurse
+        const ingRate = rate * ingCount / netResult;
+        visit(ingItem, ingRate, nextPath);
       }
     }
 
-    visit(targetItem, targetRatePerMin);
+    visit(targetItem, targetRatePerMin, null);
 
     const nodes = order.map(item => {
       const recipeKey = chosenRecipeFor(item);
@@ -831,16 +1023,14 @@
         return { item, rate, raw:true };
       }
       const recipe = RECIPES[recipeKey];
-      const resultEntry = recipe.r.find(r => r[0] === item);
-      const resultCount = resultEntry[1];
       const settings = getSettings(recipeKey, recipe.b);
+      const { resultCount, selfIngCount, netResult } = netOutputInfo(item, recipe, settings);
       const tiers = tierListFor(recipe.b);
       const buildingMult = settings.customMult != null ? settings.customMult : tiers[settings.tierIdx].mult;
       const prolif = PROLIF[settings.prolifTier] || PROLIF.none;
       const speedFactor = settings.prolifMode === 'speed' ? (1 + prolif.speed) : 1;
-      const productFactor = settings.prolifMode === 'product' ? (1 + prolif.product) : 1;
 
-      const outputPerBuildingPerMin = (resultCount / recipe.t) * 60 * buildingMult * speedFactor * productFactor;
+      const outputPerBuildingPerMin = (netResult / recipe.t) * 60 * buildingMult * speedFactor;
       const buildingsExact = rate / outputPerBuildingPerMin;
       const buildingsNeeded = Math.ceil(buildingsExact - 1e-9);
 
@@ -849,10 +1039,13 @@
         recipeKey, recipe, resultCount,
         building: recipe.b,
         buildingsExact, buildingsNeeded,
-        ingredients: recipe.i.map(([ingItem, ingCount]) => ({
-          item: ingItem,
-          rate: rate * ingCount / (resultCount * productFactor),
-        })),
+        catalystSelfCount: selfIngCount > 0 ? selfIngCount : null,
+        ingredients: recipe.i
+          .filter(([ingItem]) => ingItem !== item) // catalyst self-loop isn't an external need
+          .map(([ingItem, ingCount]) => ({
+            item: ingItem,
+            rate: rate * ingCount / netResult,
+          })),
       };
     });
 
@@ -940,13 +1133,88 @@
   const chainEl = document.getElementById('chain');
   const summaryEl = document.getElementById('summary-strip');
 
+  function toggleFocus(item){
+    state.focusItem = (state.focusItem === item) ? null : item;
+    render();
+  }
+
   chainEl.addEventListener('click', (e) => {
     if (e.target.closest('select, .chip, .node-controls, #clear-focus-btn')) return;
     const nodeEl = e.target.closest('.node');
     if (!nodeEl || !nodeEl.dataset.item) return;
-    const item = nodeEl.dataset.item;
-    state.focusItem = (state.focusItem === item) ? null : item;
+    toggleFocus(nodeEl.dataset.item);
+  });
+
+  // ---------- view toggle (List / Diagram) ----------
+  const diagramWrap = document.getElementById('diagram-wrap');
+  const diagramSvg = document.getElementById('diagram-svg');
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.viewMode = btn.dataset.view;
+      document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b === btn));
+      chainEl.style.display = state.viewMode === 'list' ? '' : 'none';
+      diagramWrap.style.display = state.viewMode === 'diagram' ? '' : 'none';
+      render();
+    });
+  });
+
+  // ---------- diagram pan + zoom (pointer events cover mouse/touch/pen) ----------
+  let dragState = null; // {startClientX, startClientY, startViewX, startViewY}
+
+  function currentPxPerViewBoxUnit(){
+    const rect = diagramSvg.getBoundingClientRect();
+    return rect.width > 0 ? rect.width / DIAGRAM_VIEWPORT_W : 1;
+  }
+
+  function applyDiagramTransform(){
+    const vp = document.getElementById('diagram-viewport');
+    if (vp && diagramView) vp.setAttribute('transform', `translate(${diagramView.x},${diagramView.y}) scale(${diagramView.scale})`);
+  }
+
+  diagramSvg.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.dnode')) return; // let click-to-focus handle node clicks
+    if (!diagramView) return;
+    dragState = { startClientX: e.clientX, startClientY: e.clientY, startViewX: diagramView.x, startViewY: diagramView.y };
+    diagramSvg.classList.add('is-dragging');
+    diagramSvg.setPointerCapture(e.pointerId);
+  });
+  diagramSvg.addEventListener('pointermove', (e) => {
+    if (!dragState) return;
+    const scale = currentPxPerViewBoxUnit();
+    diagramView.x = dragState.startViewX + (e.clientX - dragState.startClientX) / scale;
+    diagramView.y = dragState.startViewY + (e.clientY - dragState.startClientY) / scale;
+    applyDiagramTransform();
+  });
+  function endDrag(){
+    dragState = null;
+    diagramSvg.classList.remove('is-dragging');
+  }
+  diagramSvg.addEventListener('pointerup', endDrag);
+  diagramSvg.addEventListener('pointercancel', endDrag);
+
+  diagramSvg.addEventListener('wheel', (e) => {
+    if (!diagramView) return;
+    e.preventDefault();
+    const rect = diagramSvg.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / rect.width * DIAGRAM_VIEWPORT_W;
+    const mouseY = (e.clientY - rect.top) / rect.height * DIAGRAM_VIEWPORT_H;
+    const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+    const newScale = Math.min(3, Math.max(0.15, diagramView.scale * factor));
+    diagramView.x = mouseX - (mouseX - diagramView.x) * (newScale / diagramView.scale);
+    diagramView.y = mouseY - (mouseY - diagramView.y) * (newScale / diagramView.scale);
+    diagramView.scale = newScale;
+    applyDiagramTransform();
+  }, { passive: false });
+
+  document.getElementById('diagram-reset-btn').addEventListener('click', () => {
+    diagramView = null; // recomputed to fit content on next render
     render();
+  });
+
+  diagramSvg.addEventListener('click', (e) => {
+    const nodeEl = e.target.closest('.dnode');
+    if (!nodeEl || !nodeEl.dataset.item) return;
+    toggleFocus(nodeEl.dataset.item);
   });
 
   function fmt(n){
@@ -1001,13 +1269,32 @@
       m.set(n.item, (m.get(n.item) || 0) + c.rate);
     }));
 
+    // Longest-path (topological) depth from target — NOT shortest-path BFS.
+    // Why: an item can be needed both directly by the target AND by one of the target's
+    // own ingredients (e.g. Magnetic Coil is needed by Electromagnetic Turbine directly,
+    // AND by Electric Motor, which the turbine also needs). Shortest-path would put
+    // Magnetic Coil in the same tier as Electric Motor — its own consumer — which looks
+    // broken when scanning top-to-bottom. Longest-path guarantees every item sits in a
+    // strictly deeper tier than every recipe that consumes it.
+    const topoOrder = [];
+    const topoVisited = new Set();
+    const topoInStack = new Set();
+    (function topoDFS(item){
+      if (topoVisited.has(item) || topoInStack.has(item)) return; // topoInStack guards a stray cycle
+      topoInStack.add(item);
+      for (const c of childrenOf(item)) topoDFS(c.item);
+      topoInStack.delete(item);
+      topoVisited.add(item);
+      topoOrder.push(item);
+    })(state.targetItem);
+    topoOrder.reverse(); // target first, deepest leaves last
+
     const depth = {};
     depth[state.targetItem] = 0;
-    const queue = [state.targetItem];
-    for (let qi = 0; qi < queue.length; qi++){
-      const cur = queue[qi];
-      for (const c of childrenOf(cur)){
-        if (depth[c.item] === undefined){ depth[c.item] = depth[cur] + 1; queue.push(c.item); }
+    for (const item of topoOrder){
+      const d = depth[item] ?? 0;
+      for (const c of childrenOf(item)){
+        depth[c.item] = Math.max(depth[c.item] ?? -Infinity, d + 1);
       }
     }
     const origIndex = {};
@@ -1065,9 +1352,25 @@
     } else {
       topBannerHtml = `<div class="focus-hint">Click any step below to trace its full chain — click it again to reset.</div>`;
     }
+    document.getElementById('top-banner').innerHTML = topBannerHtml;
+    const clearBtnTop = document.getElementById('clear-focus-btn');
+    if (clearBtnTop) clearBtnTop.addEventListener('click', () => { state.focusItem = null; render(); });
+    const clearSearchBtnTop = document.getElementById('clear-search-btn');
+    if (clearSearchBtnTop) clearSearchBtnTop.addEventListener('click', () => clearSearchCache());
 
-    // ---- chain ----
-    let html = topBannerHtml;
+    // ---- sync which container is visible with the current view mode ----
+    chainEl.style.display = state.viewMode === 'list' ? '' : 'none';
+    diagramWrap.style.display = state.viewMode === 'diagram' ? '' : 'none';
+
+    if (state.viewMode === 'diagram'){
+      renderDiagram(nodes, byItem, ordered, depth, parentsMap, childrenOf, relatedSet);
+      window.scrollTo(0, savedScrollY);
+      saveSearchCache();
+      return;
+    }
+
+    // ---- chain (list view) ----
+    let html = '';
     let lastDepth = null;
     ordered.forEach((n) => {
       const d = depth[n.item] ?? 0;
@@ -1159,6 +1462,12 @@
           }).join('')}
         </div>` : `<div class="link-row feeds-from"><span class="link-label">extracted directly, no inputs</span></div>`;
 
+      const catalystNoteHtml = n.catalystSelfCount ? `
+        <div class="link-row catalyst-note">
+          <span class="link-label">catalyst</span>
+          <span class="catalyst-text">${n.catalystSelfCount} ${displayItem(n.item)} recycled internally each cycle — not counted as external demand</span>
+        </div>` : '';
+
       html += `
         <div class="node ${isTarget ? 'is-target':''} ${stateClass}" id="${nodeDomId(n.item)}" data-item="${n.item}">
           <div class="node-top">
@@ -1188,6 +1497,7 @@
           </div>
 
           ${ingHtml}
+          ${catalystNoteHtml}
         </div>`;
     });
 
@@ -1195,6 +1505,111 @@
     attachNodeListeners();
     window.scrollTo(0, savedScrollY);
     saveSearchCache();
+  }
+
+  function escapeXml(s){
+    return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+  }
+
+  function renderDiagram(nodes, byItem, ordered, depth, parentsMap, childrenOf, relatedSet){
+    const NODE_W = 168, NODE_H = 58, COL_GAP = 26, ROW_GAP = 60;
+
+    const tiers = {};
+    ordered.forEach(n => {
+      const d = depth[n.item] ?? 0;
+      (tiers[d] = tiers[d] || []).push(n);
+    });
+    const tierKeys = Object.keys(tiers).map(Number).sort((a,b) => a-b);
+    const maxCols = Math.max(1, ...tierKeys.map(t => tiers[t].length));
+    const contentW = Math.max(maxCols * (NODE_W + COL_GAP) + COL_GAP, 400);
+    const contentH = tierKeys.length * (NODE_H + ROW_GAP) + ROW_GAP;
+
+    const pos = {}; // item -> {x,y} center point, in content coordinates
+    tierKeys.forEach(t => {
+      const rowNodes = tiers[t];
+      const rowWidth = rowNodes.length * (NODE_W + COL_GAP) - COL_GAP;
+      const startX = (contentW - rowWidth) / 2;
+      rowNodes.forEach((n, i) => {
+        pos[n.item] = {
+          x: startX + i * (NODE_W + COL_GAP) + NODE_W / 2,
+          y: ROW_GAP / 2 + t * (NODE_H + ROW_GAP) + NODE_H / 2,
+        };
+      });
+    });
+
+    // first time viewing this chain (or after Reset) — fit the whole pyramid in the window
+    if (!diagramView){
+      const fitScale = Math.min(3, Math.max(0.15,
+        Math.min(DIAGRAM_VIEWPORT_W / contentW, DIAGRAM_VIEWPORT_H / contentH) * 0.92
+      ));
+      diagramView = {
+        x: (DIAGRAM_VIEWPORT_W - contentW * fitScale) / 2,
+        y: 20,
+        scale: fitScale,
+      };
+    }
+
+    let edgesSvg = '';
+    let edgeLabelsSvg = '';
+    nodes.forEach(n => {
+      if (n.raw) return;
+      n.ingredients.forEach(ig => {
+        const p1 = pos[n.item], p2 = pos[ig.item];
+        if (!p1 || !p2) return;
+        const isDimmed = relatedSet && !(relatedSet.has(n.item) && relatedSet.has(ig.item));
+        let cls = 'edge';
+        if (relatedSet) cls += isDimmed ? ' is-dimmed' : ' is-related';
+        const midY = (p1.y + p2.y) / 2;
+        edgesSvg += `<path class="${cls}" d="M${p1.x},${p1.y + NODE_H/2} C${p1.x},${midY} ${p2.x},${midY} ${p2.x},${p2.y - NODE_H/2}"></path>`;
+
+        // How many of the CHILD's assemblers are dedicated to feeding THIS specific parent —
+        // same math as the "needs" chips in list view, just shown inline on the edge here so a
+        // shared sub-recipe (e.g. Graphene feeding two different parents) shows its split at a glance.
+        const childNode = byItem[ig.item];
+        if (childNode && !childNode.raw){
+          const shareCount = (childNode.buildingsExact / childNode.rate) * ig.rate;
+          const label = shareCount.toFixed(1) + '×';
+          const midX = (p1.x + p2.x) / 2;
+          const labelW = Math.max(30, label.length * 7 + 10);
+          const labelCls = 'edge-label' + (isDimmed ? ' is-dimmed' : '');
+          edgeLabelsSvg += `
+            <g class="${labelCls}" transform="translate(${midX - labelW/2},${midY - 9})">
+              <rect width="${labelW}" height="18" rx="9"></rect>
+              <text x="${labelW/2}" y="13" text-anchor="middle">${escapeXml(label)}</text>
+            </g>`;
+        }
+      });
+    });
+
+    let nodesSvg = '';
+    ordered.forEach(n => {
+      const p = pos[n.item];
+      if (!p) return;
+      let stateClass = '';
+      if (relatedSet) stateClass = n.item === state.focusItem ? 'is-focused' : (relatedSet.has(n.item) ? 'is-related' : 'is-dimmed');
+      else if (n.item === state.targetItem) stateClass = 'is-target';
+
+      const label = escapeXml(displayItem(n.item));
+      const sub = n.raw ? 'gathered / stockpiled' : escapeXml(displayBuilding(n.building));
+      const rateText = `${fmt(n.rate)}/min`;
+      const countText = n.raw ? '' : ` · ${n.buildingsNeeded}×`;
+
+      nodesSvg += `
+        <g class="dnode ${stateClass} ${n.raw ? 'is-raw' : ''}" data-item="${escapeXml(n.item)}" transform="translate(${p.x - NODE_W/2},${p.y - NODE_H/2})">
+          <rect class="dnode-bg" width="${NODE_W}" height="${NODE_H}" rx="4"></rect>
+          <text class="dnode-name" x="10" y="19">${label}</text>
+          <text class="dnode-sub" x="10" y="33">${sub}</text>
+          <text class="dnode-rate" x="10" y="48">${escapeXml(rateText + countText)}</text>
+        </g>`;
+    });
+
+    diagramSvg.setAttribute('viewBox', `0 0 ${DIAGRAM_VIEWPORT_W} ${DIAGRAM_VIEWPORT_H}`);
+    diagramSvg.innerHTML = `
+      <g id="diagram-viewport" transform="translate(${diagramView.x},${diagramView.y}) scale(${diagramView.scale})">
+        <g class="edges">${edgesSvg}</g>
+        <g class="edge-labels">${edgeLabelsSvg}</g>
+        <g class="nodes">${nodesSvg}</g>
+      </g>`;
   }
 
   function jumpTo(domId){
@@ -1209,10 +1624,6 @@
   }
 
   function attachNodeListeners(){
-    const clearBtn = document.getElementById('clear-focus-btn');
-    if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); state.focusItem = null; render(); });
-    const clearSearchBtn = document.getElementById('clear-search-btn');
-    if (clearSearchBtn) clearSearchBtn.addEventListener('click', (e) => { e.stopPropagation(); clearSearchCache(); });
     chainEl.querySelectorAll('[data-jump]').forEach(btn => {
       btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
     });
@@ -1326,6 +1737,7 @@
     state.targetRate = currentRatePerMin();
     // reset per-recipe settings so new defaults panel values apply fresh
     state.nodeSettings = {};
+    diagramView = null; // re-fit the diagram to the new chain
     render();
   });
 
