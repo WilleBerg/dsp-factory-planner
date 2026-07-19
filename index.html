@@ -322,6 +322,52 @@
     font-weight:400;
   }
 
+  .breadcrumb-trail{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-bottom:12px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.72rem;
+  }
+  .crumb-btn{
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    color:var(--text-mute);
+    border-radius:12px;
+    padding:4px 10px;
+    cursor:pointer;
+  }
+  .crumb-btn:hover{color:var(--amber); border-color:var(--amber-dim);}
+  .crumb-sep{color:var(--text-dim);}
+  .crumb-current{
+    color:var(--amber);
+    font-weight:600;
+    padding:4px 2px;
+  }
+
+  .drill-btn{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text-dim);
+    border-radius:var(--radius);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.62rem;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    padding:3px 7px;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .drill-btn:hover{color:var(--amber); border-color:var(--amber-dim);}
+
+  .dnode-drill{cursor:pointer;}
+  .dnode-drill circle{fill:var(--panel-2); stroke:var(--line);}
+  .dnode-drill text{fill:var(--text-dim); font:600 10px 'JetBrains Mono', monospace;}
+  .dnode-drill:hover circle{stroke:var(--amber);}
+  .dnode-drill:hover text{fill:var(--amber);}
+
   .view-toggle{
     display:flex;
     gap:6px;
@@ -667,6 +713,7 @@
       </div>
       <div id="results-content" style="display:none;">
         <div class="summary-strip" id="summary-strip"></div>
+        <div id="breadcrumb-trail"></div>
         <div id="top-banner"></div>
         <div class="view-toggle">
           <button type="button" class="view-btn active" data-view="list">List</button>
@@ -719,6 +766,25 @@
       i: [['Graphene', 1], ['PhotonCombiner', 1]],
       r: [['SolarSail', 2]],
       t: 4,
+      b: 'AssemblingMachine',
+    },
+    // Diamond (Advanced, from Kimberlite Ore): source dataset had 1 Kimberlite -> 1 Diamond @ 2s.
+    // Confirmed against dyson-calculator.com: it's actually 1 Kimberlite Ore -> 2 Diamond @ 1.5s.
+    DiamondFromKimberlite: {
+      i: [['Kimberlite', 1]],
+      r: [['Diamond', 2]],
+      t: 1.5,
+      b: 'Smelter',
+    },
+    // Dyson Sphere Component: source dataset wrongly used SolarPanel (a power-generation building)
+    // as an ingredient instead of SolarSail. Solar Panel is a real, separate item with its own
+    // correct recipe elsewhere — this was a mixup in the source extractor, not a real alt-ingredient.
+    // Confirmed against dyson-calculator.com: 3 Frame Material + 3 Processor + 3 Solar Sail -> 1
+    // Dyson Sphere Component @ 8s (quantities and time were already right, only the item was wrong).
+    DysonSphereComponent: {
+      i: [['FrameMaterial', 3], ['SolarSail', 3], ['Processor', 3]],
+      r: [['DysonSphereComponent', 1]],
+      t: 8,
       b: 'AssemblingMachine',
     },
   };
@@ -912,11 +978,13 @@
     nodeSettings: {},     // recipeKey -> {tierIdx, prolifTier, prolifMode}
     focusItem: null,      // item currently traced/highlighted, or null
     viewMode: 'list',      // 'list' | 'diagram'
+    breadcrumbs: [],       // [{item, rate}, ...] ancestor targets, most-recent last
   };
 
   const DIAGRAM_VIEWPORT_W = 1000;
   const DIAGRAM_VIEWPORT_H = 620;
   let diagramView = null; // {x, y, scale} — null means "not yet fit to content"
+  let lastByItem = null;  // item -> computed node, refreshed every render(); used for drill-down rate carry-over
 
   function getDefaults(){
     return {
@@ -1138,8 +1206,38 @@
     render();
   }
 
+  function syncSearchUiTo(item, rate){
+    searchInput.value = displayItem(item);
+    rateInput.value = rateUnit.value === 'sec' ? (rate / 60) : rate;
+  }
+
+  function drillInto(item){
+    if (!lastByItem || !lastByItem[item] || lastByItem[item].raw) return; // nothing to drill into
+    if (item === state.targetItem) return;
+    const rate = lastByItem[item].rate;
+    state.breadcrumbs.push({ item: state.targetItem, rate: state.targetRate });
+    state.targetItem = item;
+    state.targetRate = rate;
+    state.focusItem = null;
+    diagramView = null;
+    syncSearchUiTo(item, rate);
+    render();
+  }
+
+  function goToBreadcrumb(index){
+    const target = state.breadcrumbs[index];
+    if (!target) return;
+    state.breadcrumbs = state.breadcrumbs.slice(0, index);
+    state.targetItem = target.item;
+    state.targetRate = target.rate;
+    state.focusItem = null;
+    diagramView = null;
+    syncSearchUiTo(target.item, target.rate);
+    render();
+  }
+
   chainEl.addEventListener('click', (e) => {
-    if (e.target.closest('select, .chip, .node-controls, #clear-focus-btn')) return;
+    if (e.target.closest('select, .chip, .node-controls, #clear-focus-btn, .drill-btn')) return;
     const nodeEl = e.target.closest('.node');
     if (!nodeEl || !nodeEl.dataset.item) return;
     toggleFocus(nodeEl.dataset.item);
@@ -1212,6 +1310,8 @@
   });
 
   diagramSvg.addEventListener('click', (e) => {
+    const drillEl = e.target.closest('.dnode-drill');
+    if (drillEl && drillEl.dataset.item){ drillInto(drillEl.dataset.item); return; }
     const nodeEl = e.target.closest('.dnode');
     if (!nodeEl || !nodeEl.dataset.item) return;
     toggleFocus(nodeEl.dataset.item);
@@ -1261,6 +1361,7 @@
     // ---- organize into dependency tiers (depth 0 = target) ----
     const byItem = {};
     nodes.forEach(n => byItem[n.item] = n);
+    lastByItem = byItem; // for drill-down rate carry-over, read outside this render() call
     const childrenOf = item => (byItem[item] && !byItem[item].raw) ? byItem[item].ingredients : [];
     const parentsMap = {}; // item -> Map(parentItem -> rate that parent draws from it)
     nodes.forEach(n => childrenOf(n.item).forEach(c => {
@@ -1357,6 +1458,24 @@
     if (clearBtnTop) clearBtnTop.addEventListener('click', () => { state.focusItem = null; render(); });
     const clearSearchBtnTop = document.getElementById('clear-search-btn');
     if (clearSearchBtnTop) clearSearchBtnTop.addEventListener('click', () => clearSearchCache());
+
+    // ---- breadcrumb trail (only shows once you've drilled into a sub-recipe) ----
+    const breadcrumbEl = document.getElementById('breadcrumb-trail');
+    if (state.breadcrumbs.length === 0){
+      breadcrumbEl.innerHTML = '';
+    } else {
+      breadcrumbEl.innerHTML = `
+        <div class="breadcrumb-trail">
+          ${state.breadcrumbs.map((b, i) => `
+            <button type="button" class="crumb-btn" data-crumb-idx="${i}">${displayItem(b.item)}</button>
+            <span class="crumb-sep">›</span>
+          `).join('')}
+          <span class="crumb-current">${displayItem(state.targetItem)}</span>
+        </div>`;
+      breadcrumbEl.querySelectorAll('[data-crumb-idx]').forEach(btn => {
+        btn.addEventListener('click', () => goToBreadcrumb(parseInt(btn.dataset.crumbIdx, 10)));
+      });
+    }
 
     // ---- sync which container is visible with the current view mode ----
     chainEl.style.display = state.viewMode === 'list' ? '' : 'none';
@@ -1478,6 +1597,7 @@
             <div class="node-rate">
               <div class="rate-num">${fmt(n.rate)}</div>
               <div class="rate-lbl">per min</div>
+              ${!isTarget ? `<button type="button" class="drill-btn" data-drill="${n.item}">Set as target ⌵</button>` : ''}
             </div>
           </div>
 
@@ -1593,6 +1713,12 @@
       const sub = n.raw ? 'gathered / stockpiled' : escapeXml(displayBuilding(n.building));
       const rateText = `${fmt(n.rate)}/min`;
       const countText = n.raw ? '' : ` · ${n.buildingsNeeded}×`;
+      const canDrill = !n.raw && n.item !== state.targetItem;
+      const drillIcon = canDrill ? `
+        <g class="dnode-drill" data-item="${escapeXml(n.item)}" transform="translate(${NODE_W - 22},4)">
+          <circle cx="9" cy="9" r="9"></circle>
+          <text x="9" y="13" text-anchor="middle">⌵</text>
+        </g>` : '';
 
       nodesSvg += `
         <g class="dnode ${stateClass} ${n.raw ? 'is-raw' : ''}" data-item="${escapeXml(n.item)}" transform="translate(${p.x - NODE_W/2},${p.y - NODE_H/2})">
@@ -1600,6 +1726,7 @@
           <text class="dnode-name" x="10" y="19">${label}</text>
           <text class="dnode-sub" x="10" y="33">${sub}</text>
           <text class="dnode-rate" x="10" y="48">${escapeXml(rateText + countText)}</text>
+          ${drillIcon}
         </g>`;
     });
 
@@ -1626,6 +1753,9 @@
   function attachNodeListeners(){
     chainEl.querySelectorAll('[data-jump]').forEach(btn => {
       btn.addEventListener('click', () => jumpTo(btn.dataset.jump));
+    });
+    chainEl.querySelectorAll('[data-drill]').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); drillInto(btn.dataset.drill); });
     });
     chainEl.querySelectorAll('[data-role="recipe-select"]').forEach(sel => {
       sel.addEventListener('change', e => {
@@ -1737,6 +1867,7 @@
     state.targetRate = currentRatePerMin();
     // reset per-recipe settings so new defaults panel values apply fresh
     state.nodeSettings = {};
+    state.breadcrumbs = []; // a deliberate new search starts a fresh trail
     diagramView = null; // re-fit the diagram to the new chain
     render();
   });
